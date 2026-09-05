@@ -1,4 +1,4 @@
-import { chatErrorResponse, getChatThread, updateChatThread } from "@/lib/chat-store";
+import { chatErrorResponse, getChatHistory, updateChatThread } from "@/lib/chat-store";
 import { isChatThreadId, parseChatRequestBody, parseChatThreadPatch } from "@/lib/chat-types";
 import { getChatSupabaseClient } from "@/lib/supabase-server";
 
@@ -9,8 +9,8 @@ export async function GET(
   try {
     const { chatId } = await context.params;
     if (!isChatThreadId(chatId)) return chatNotFound();
-    const thread = await getChatThread(getChatSupabaseClient(), chatId);
-    return thread === null ? chatNotFound() : Response.json(thread);
+    const history = await getChatHistory(getChatSupabaseClient(), chatId);
+    return history === null ? chatNotFound() : Response.json(history);
   } catch (error: unknown) {
     return chatErrorResponse(error);
   }

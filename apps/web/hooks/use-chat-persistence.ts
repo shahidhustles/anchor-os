@@ -20,6 +20,7 @@ import type { ChatSessionCursor } from "@/lib/chat-types";
 type UseChatPersistenceOptions = {
   readonly chatId: string;
   readonly onBindingSettled: (chatId: string, failed: boolean) => void;
+  readonly onResumeFailed: () => void;
 };
 
 export function useChatPersistence(options: UseChatPersistenceOptions) {
@@ -94,6 +95,10 @@ export function useChatPersistence(options: UseChatPersistenceOptions) {
     [scheduleFlush],
   );
 
+  const handleError = useCallback(() => {
+    optionsRef.current.onResumeFailed();
+  }, []);
+
   const prepareSend = useCallback<PrepareSend>(async (payload) => {
     if (payload.message !== undefined) {
       await savePendingChatMessage(optionsRef.current.chatId, sanitizeUserMessage(payload.message));
@@ -121,5 +126,5 @@ export function useChatPersistence(options: UseChatPersistenceOptions) {
     if (session !== null) void persist(session);
   }, [persist]);
 
-  return { handleSessionChange, retryBinding, prepareSend, handleEvent, handleFinish };
+  return { handleSessionChange, retryBinding, prepareSend, handleError, handleEvent, handleFinish };
 }

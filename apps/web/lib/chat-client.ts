@@ -1,5 +1,11 @@
 import { isAnchorModelId, type AnchorModelId } from "@anchor-os/agent/model-catalog";
+import {
+  sanitizeChatMessages,
+  sanitizeStreamEvent,
+  type SanitizedChatMessage,
+} from "./chat-sanitizer";
 import type { ChatSessionCursor, ChatThread, ChatTurnSnapshot } from "./chat-types";
+import type { MessageStreamEvent } from "eve/client";
 
 export class ChatClientError extends Error {
   readonly status: number;
@@ -18,6 +24,12 @@ export type ChatThreadPatchInput = {
   readonly archived?: boolean;
 };
 
+export type LoadedChat = {
+  readonly thread: ChatThread;
+  readonly events: readonly MessageStreamEvent[];
+  readonly messages: readonly SanitizedChatMessage[];
+};
+
 const CHATS_API = "/api/chats";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -32,6 +44,11 @@ export async function listChats(): Promise<readonly ChatThread[]> {
 export async function createChat(): Promise<ChatThread> {
   const payload: unknown = await request("POST", CHATS_API, "{}");
   return parseChatThread(payload);
+}
+
+export async function loadChat(chatId: string): Promise<LoadedChat> {
+  const payload: unknown = await request("GET", `${CHATS_API}/${encodeURIComponent(chatId)}`);
+  return parseLoadedChat(payload);
 }
 
 export async function updateChat(chatId: string, patch: ChatThreadPatchInput): Promise<ChatThread> {
@@ -135,6 +152,29 @@ function parseChatThread(value: unknown): ChatThread {
     archivedAt: requireNullableString(value["archivedAt"], "archivedAt"),
     createdAt: requireString(value["createdAt"], "createdAt"),
     updatedAt: requireString(value["updatedAt"], "updatedAt"),
+  };
+}
+
+function parseLoadedChat(value: unknown): LoadedChat {
+  if (!isRecord(value)) {
+    throw new ChatClientError("chat history response must be an object", 500);
+  }
+  const events = value["events"];
+  const messages = value["messages"];
+  if (!Array.isArray(events)) {
+    throw new ChatClientError("chat history response events must be an array", 500);
+  }
+  if (!Array.isArray(messages)) {
+    throw new ChatClientError("chat history response messages must be an array", 500);
+  }
+  const sanitizedEvents = events.map(sanitizeStreamEvent).filter((event) => event !== null);
+  if (sanitizedEvents.length !== events.length) {
+    throw new ChatClientError("chat history response contains an invalid event", 500);
+  }
+  return {
+    thread: parseChatThread(value["thread"]),
+    events: sanitizedEvents as readonly MessageStreamEvent[],
+    messages: sanitizeChatMessages(messages),
   };
 }
 

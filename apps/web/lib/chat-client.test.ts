@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ChatClientError, createChat, listChats, updateChat } from "./chat-client";
+import { ChatClientError, createChat, listChats, loadChat, updateChat } from "./chat-client";
 
 const THREAD_JSON = {
   id: "3f9d1c9e-8b7a-4c2d-9e1f-0a2b3c4d5e6f",
@@ -64,6 +64,43 @@ test("listChats parses a thread list", async () => {
       assert.equal(threads[0]?.modelId, "muse-spark-1.3-contributor");
     },
   );
+});
+
+test("loadChat fetches saved events and the message projection", async () => {
+  const savedThread = { ...THREAD_JSON, eveSessionId: "ses_123", eveStreamIndex: 1 };
+  let requestPath = "";
+
+  await withFetch(
+    async (input) => {
+      requestPath = String(input);
+      return jsonResponse({
+        thread: savedThread,
+        events: [
+          {
+            type: "session.started",
+            data: {},
+            meta: { id: "event_1", at: "2026-09-05T00:00:00.000Z" },
+          },
+        ],
+        messages: [
+          {
+            id: "message_1",
+            role: "user",
+            parts: [{ type: "text", text: "Remember this" }],
+            metadata: {},
+          },
+        ],
+      });
+    },
+    async () => {
+      const chat = await loadChat(THREAD_JSON.id);
+      assert.equal(chat.thread.eveSessionId, "ses_123");
+      assert.equal(chat.events[0]?.meta.id, "event_1");
+      assert.equal(chat.messages[0]?.parts.length, 1);
+    },
+  );
+
+  assert.equal(requestPath, `/api/chats/${THREAD_JSON.id}`);
 });
 
 test("updateChat sends the session cursor patch", async () => {

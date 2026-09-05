@@ -36,6 +36,12 @@ export type ChatTurnSnapshotInput = {
   readonly messages: readonly SanitizedChatMessage[];
 };
 
+export type ChatHistory = {
+  readonly thread: ChatThread;
+  readonly events: readonly SanitizedStreamEvent[];
+  readonly messages: readonly SanitizedChatMessage[];
+};
+
 export function chatErrorResponse(error: unknown): Response {
   if (error instanceof ChatStoreError || error instanceof ChatValidationError) {
     return Response.json({ error: error.message }, { status: error.status });
@@ -84,6 +90,47 @@ export async function getChatThread(
     .maybeSingle();
   if (error !== null) throw chatStoreError("load chat thread", error);
   return data === null ? null : toChatThread(data);
+}
+
+export async function getChatHistory(
+  client: ChatSupabaseClient,
+  chatId: string,
+): Promise<ChatHistory | null> {
+  const thread = await getChatThread(client, chatId);
+  if (thread === null) return null;
+
+  const [eventsResult, messagesResult] = await Promise.all([
+    client
+      .from("chat_events")
+      .select("event_id, event_type, event_data, emitted_at")
+      .eq("thread_id", chatId)
+      .order("stream_index", { ascending: true, nullsFirst: false })
+      .order("ingestion_order", { ascending: true }),
+    client
+      .from("chat_messages")
+      .select("message_key, role, content, metadata")
+      .eq("thread_id", chatId)
+      .order("sort_order", { ascending: true }),
+  ]);
+  if (eventsResult.error !== null) throw chatStoreError("load chat events", eventsResult.error);
+  if (messagesResult.error !== null) {
+    throw chatStoreError("load chat message projection", messagesResult.error);
+  }
+
+  return {
+    thread,
+    events: eventsResult.data.map((event) => ({
+      type: event.event_type,
+      data: event.event_data,
+      meta: { id: event.event_id, at: event.emitted_at },
+    })),
+    messages: messagesResult.data.map((message) => ({
+      id: message.message_key,
+      role: message.role,
+      parts: message.content,
+      metadata: message.metadata,
+    })),
+  };
 }
 
 export async function updateChatThread(

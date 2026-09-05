@@ -7,7 +7,7 @@ import { Thread } from "@/components/assistant-ui/elements/thread.aui";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useChatPersistence } from "@/hooks/use-chat-persistence";
-import { archiveChat, createChat, listChats } from "@/lib/chat-client";
+import { archiveChat, createChat, listChats, loadChat, type LoadedChat } from "@/lib/chat-client";
 import type { ChatThread } from "@/lib/chat-types";
 import { useEveAgentRuntime } from "@assistant-ui/eve";
 import {
@@ -35,6 +35,7 @@ type Chat = {
   readonly title: string;
   readonly status: ChatStatus;
   readonly bindingFailed: boolean;
+  readonly history?: LoadedChat;
 };
 
 type LoadState = "loading" | "ready" | "error";
@@ -47,13 +48,14 @@ const MODEL_OPTIONS: readonly ModelOption[] = ANCHOR_MODELS.map((model) => ({
   name: model.label,
 }));
 
-function toChat(thread: ChatThread): Chat {
+function toChat(thread: ChatThread, history?: LoadedChat): Chat {
   return {
     id: thread.id,
     modelId: thread.modelId,
     title: thread.title,
     status: "idle",
     bindingFailed: false,
+    ...(history === undefined ? {} : { history }),
   };
 }
 
@@ -110,19 +112,51 @@ function ChatPane({
   onBindingSettled,
 }: ChatPaneProps) {
   const modelIdRef = useRef(chat.modelId);
+  const [resuming, setResuming] = useState(chat.history?.thread.eveSessionId !== null);
+  const [resumeFailed, setResumeFailed] = useState(false);
   modelIdRef.current = chat.modelId;
   const headers = useCallback(() => ({ [ANCHOR_MODEL_HEADER]: modelIdRef.current }), []);
-  const { handleSessionChange, retryBinding, prepareSend, handleEvent, handleFinish } =
+  const onResumeFailed = useCallback(() => {
+    if (resuming) {
+      setResuming(false);
+      setResumeFailed(true);
+    }
+  }, [resuming]);
+  const { handleSessionChange, retryBinding, prepareSend, handleError, handleEvent, handleFinish } =
     useChatPersistence({
       chatId: chat.id,
       onBindingSettled,
+      onResumeFailed,
     });
+  const handleRuntimeFinish = useCallback(
+    (snapshot: Parameters<typeof handleFinish>[0]) => {
+      handleFinish(snapshot);
+      setResuming(false);
+    },
+    [handleFinish],
+  );
   const runtime = useEveAgentRuntime({
     headers,
+    ...(chat.history === undefined
+      ? {}
+      : {
+          initialEvents: chat.history.events,
+          ...(chat.history.thread.eveSessionId === null
+            ? {}
+            : {
+                initialSession: {
+                  sessionId: chat.history.thread.eveSessionId,
+                  streamIndex: chat.history.thread.eveStreamIndex,
+                },
+                resume: true,
+              }),
+        }),
+    isDisabled: resuming || resumeFailed,
+    onError: handleError,
     onSessionChange: handleSessionChange,
     prepareSend,
     onEvent: handleEvent,
-    onFinish: handleFinish,
+    onFinish: handleRuntimeFinish,
   });
   const config = useMemo(
     () =>
@@ -169,17 +203,38 @@ function ChatPane({
                   onAction={retryBinding}
                 />
               ) : (
-                <Thread
-                  autoFocus={selected}
-                  modelPicker={{
-                    models: MODEL_OPTIONS,
-                    value: chat.modelId,
-                    onValueChange: (value) => {
-                      if (isAnchorModelId(value)) selectModel(chat.id, value);
-                    },
-                    disabled: chat.status === "running",
-                  }}
-                />
+                <>
+                  {resuming ? (
+                    <p
+                      role="status"
+                      className="px-4 pt-3 text-center text-sm text-zinc-500"
+                      data-slot="chat-resuming"
+                    >
+                      Restoring this chat's workspace…
+                    </p>
+                  ) : null}
+                  {resumeFailed ? (
+                    <p
+                      role="alert"
+                      className="mx-4 mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                      data-slot="chat-resume-error"
+                    >
+                      This workspace is unavailable. The saved transcript is still here, but this
+                      chat cannot send messages.
+                    </p>
+                  ) : null}
+                  <Thread
+                    autoFocus={selected}
+                    modelPicker={{
+                      models: MODEL_OPTIONS,
+                      value: chat.modelId,
+                      onValueChange: (value) => {
+                        if (isAnchorModelId(value)) selectModel(chat.id, value);
+                      },
+                      disabled: chat.status === "running" || resuming || resumeFailed,
+                    }}
+                  />
+                </>
               )}
             </ArtifactWorkspace>
           </div>
@@ -251,8 +306,12 @@ export default function Home() {
     setLoadState("loading");
     try {
       const threads = await listChats();
-      const loaded = threads.length === 0 ? [await createChat()] : threads;
-      const loadedChats = loaded.map(toChat);
+      const loadedChats =
+        threads.length === 0
+          ? [toChat(await createChat())]
+          : await Promise.all(threads.map((thread) => loadChat(thread.id))).then((histories) =>
+              histories.map((history) => toChat(history.thread, history)),
+            );
       setChats(loadedChats);
       setSelectedChatId(loadedChats[0]?.id ?? null);
       setLoadState("ready");
