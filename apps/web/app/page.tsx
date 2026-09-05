@@ -7,6 +7,7 @@ import { useEveAgentRuntime } from "@assistant-ui/eve";
 import { AssistantRuntimeProvider, AuiConfig, Suggestions, useAuiState } from "@assistant-ui/react";
 import { MessageSquareIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ModelOption } from "@/components/assistant-ui/elements/model-selector";
 import {
   ANCHOR_MODELS,
   ANCHOR_MODEL_HEADER,
@@ -26,10 +27,16 @@ type Chat = {
 
 const NEW_CHAT_TITLE = "New chat";
 const MAX_TITLE_LENGTH = 50;
+const INITIAL_CHAT_ID = "initial-chat";
 
-function createChat(): Chat {
+const MODEL_OPTIONS: readonly ModelOption[] = ANCHOR_MODELS.map((model) => ({
+  id: model.id,
+  name: model.label,
+}));
+
+function createChat(id = crypto.randomUUID()): Chat {
   return {
-    id: crypto.randomUUID(),
+    id,
     modelId: DEFAULT_ANCHOR_MODEL_ID,
     title: NEW_CHAT_TITLE,
     status: "idle",
@@ -116,30 +123,18 @@ function ChatPane({ chat, selected, registerCancel, selectModel, updateChat }: C
     <div className={selected ? "h-full" : "hidden"} aria-hidden={!selected}>
       <AssistantRuntimeProvider runtime={runtime} config={config}>
         <RuntimeObserver onStateChange={onStateChange} />
-        <header className="flex h-12 items-center border-b border-zinc-200 px-4">
-          <label className="sr-only" htmlFor={`model-${chat.id}`}>
-            Model
-          </label>
-          <select
-            id={`model-${chat.id}`}
-            value={chat.modelId}
-            disabled={chat.status === "running"}
-            onChange={(event) => {
-              if (isAnchorModelId(event.target.value)) {
-                selectModel(chat.id, event.target.value);
-              }
+        <div className="h-full">
+          <Thread
+            autoFocus={selected}
+            modelPicker={{
+              models: MODEL_OPTIONS,
+              value: chat.modelId,
+              onValueChange: (value) => {
+                if (isAnchorModelId(value)) selectModel(chat.id, value);
+              },
+              disabled: chat.status === "running",
             }}
-            className="max-w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium outline-none transition-colors hover:bg-zinc-50 focus:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {ANCHOR_MODELS.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.label}
-              </option>
-            ))}
-          </select>
-        </header>
-        <div className="h-[calc(100%-3rem)]">
-          <Thread autoFocus={selected} />
+          />
         </div>
       </AssistantRuntimeProvider>
     </div>
@@ -147,7 +142,7 @@ function ChatPane({ chat, selected, registerCancel, selectModel, updateChat }: C
 }
 
 export default function Home() {
-  const [chats, setChats] = useState<Chat[]>(() => [createChat()]);
+  const [chats, setChats] = useState<Chat[]>(() => [createChat(INITIAL_CHAT_ID)]);
   const [selectedChatId, setSelectedChatId] = useState(() => chats[0]!.id);
   const cancelByChatId = useRef(new Map<string, () => void>());
 

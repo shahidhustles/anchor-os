@@ -9,6 +9,7 @@
     "build": "bun run --filter @anchor-os/web build",
     "lint": "bun run --filter @anchor-os/web lint",
     "typecheck": "bun run --filter @anchor-os/web typecheck",
+    "web:test": "bun run --filter @anchor-os/web test",
     "agent:info": "bun run --filter @anchor-os/agent info",
     "agent:build": "bun run --filter @anchor-os/agent build",
     "agent:test": "bun run --filter @anchor-os/agent test"

@@ -5,6 +5,12 @@ import { ThreadFollowupSuggestions } from "@/components/assistant-ui/elements/fo
 import { Image } from "@/components/assistant-ui/elements/image";
 import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
 import {
+  ModelSelectorContent,
+  ModelSelectorRoot,
+  ModelSelectorTrigger,
+  type ModelOption,
+} from "@/components/assistant-ui/elements/model-selector";
+import {
   Reasoning,
   ReasoningContent,
   ReasoningRoot,
@@ -75,9 +81,19 @@ export type ThreadComponents = {
   ReasoningGroup?: ComponentType<PropsWithChildren<{ group: ThreadGroupPart }>> | undefined;
 };
 
+/** Controlled model picker rendered inside the composer action row. The
+ * runtime owns request routing; this only feeds the chat's selected model. */
+export type ThreadModelPicker = {
+  models: readonly ModelOption[];
+  value: string | undefined;
+  onValueChange: (value: string) => void;
+  disabled?: boolean | undefined;
+};
+
 export type ThreadProps = {
   components?: ThreadComponents | undefined;
   autoFocus?: boolean | undefined;
+  modelPicker?: ThreadModelPicker | undefined;
 };
 
 const EMPTY_COMPONENTS: ThreadComponents = {};
@@ -117,17 +133,25 @@ const ThreadHistorySkeleton: FC = () => (
   </div>
 );
 
-export const Thread: FC<ThreadProps> = ({ components = EMPTY_COMPONENTS, autoFocus = true }) => {
+export const Thread: FC<ThreadProps> = ({
+  components = EMPTY_COMPONENTS,
+  autoFocus = true,
+  modelPicker,
+}) => {
   const isEmpty = useAuiState(isNewChatView);
 
   return (
     <ThreadComponentsContext.Provider value={components}>
-      <ThreadRoot isEmpty={isEmpty} autoFocus={autoFocus} />
+      <ThreadRoot isEmpty={isEmpty} autoFocus={autoFocus} modelPicker={modelPicker} />
     </ThreadComponentsContext.Provider>
   );
 };
 
-const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({ isEmpty, autoFocus }) => {
+const ThreadRoot: FC<{
+  isEmpty: boolean;
+  autoFocus: boolean;
+  modelPicker?: ThreadModelPicker | undefined;
+}> = ({ isEmpty, autoFocus, modelPicker }) => {
   const { Welcome = ThreadWelcome } = useContext(ThreadComponentsContext);
 
   return (
@@ -170,7 +194,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({ isEmpty, aut
           >
             <ThreadScrollToBottom />
             <ThreadFollowupSuggestions />
-            <Composer autoFocus={autoFocus} />
+            <Composer autoFocus={autoFocus} modelPicker={modelPicker} />
             <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
               <ThreadSuggestions />
             </AuiIf>
@@ -245,7 +269,10 @@ const ThreadSuggestionItem: FC = () => {
   );
 };
 
-const Composer: FC<{ autoFocus: boolean }> = ({ autoFocus }) => {
+const Composer: FC<{ autoFocus: boolean; modelPicker?: ThreadModelPicker | undefined }> = ({
+  autoFocus,
+  modelPicker,
+}) => {
   return (
     <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
       <div
@@ -260,16 +287,32 @@ const Composer: FC<{ autoFocus: boolean }> = ({ autoFocus }) => {
           enterKeyHint="send"
           aria-label="Message input"
         />
-        <ComposerAction />
+        <ComposerAction modelPicker={modelPicker} />
       </div>
     </ComposerPrimitive.Root>
   );
 };
 
-const ComposerAction: FC = () => {
+const ComposerAction: FC<{ modelPicker?: ThreadModelPicker | undefined }> = ({ modelPicker }) => {
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
-      <span />
+      {modelPicker ? (
+        <ModelSelectorRoot
+          models={modelPicker.models}
+          value={modelPicker.value}
+          onValueChange={modelPicker.onValueChange}
+        >
+          <ModelSelectorTrigger
+            variant="ghost"
+            size="sm"
+            disabled={modelPicker.disabled}
+            aria-label="Model"
+          />
+          <ModelSelectorContent />
+        </ModelSelectorRoot>
+      ) : (
+        <span />
+      )}
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>
           <AuiIf condition={(s) => s.composer.dictation == null}>
