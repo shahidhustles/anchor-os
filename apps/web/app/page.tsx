@@ -1,5 +1,7 @@
 "use client";
 
+import { ArtifactWorkspace } from "@/components/anchor-os/artifact-panel";
+import { ArtifactsProvider } from "@/components/anchor-os/artifacts-context";
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -122,20 +124,24 @@ function ChatPane({ chat, selected, registerCancel, selectModel, updateChat }: C
   return (
     <div className={selected ? "h-full" : "hidden"} aria-hidden={!selected}>
       <AssistantRuntimeProvider runtime={runtime} config={config}>
-        <RuntimeObserver onStateChange={onStateChange} />
-        <div className="h-full">
-          <Thread
-            autoFocus={selected}
-            modelPicker={{
-              models: MODEL_OPTIONS,
-              value: chat.modelId,
-              onValueChange: (value) => {
-                if (isAnchorModelId(value)) selectModel(chat.id, value);
-              },
-              disabled: chat.status === "running",
-            }}
-          />
-        </div>
+        <ArtifactsProvider>
+          <RuntimeObserver onStateChange={onStateChange} />
+          <div className="h-full">
+            <ArtifactWorkspace>
+              <Thread
+                autoFocus={selected}
+                modelPicker={{
+                  models: MODEL_OPTIONS,
+                  value: chat.modelId,
+                  onValueChange: (value) => {
+                    if (isAnchorModelId(value)) selectModel(chat.id, value);
+                  },
+                  disabled: chat.status === "running",
+                }}
+              />
+            </ArtifactWorkspace>
+          </div>
+        </ArtifactsProvider>
       </AssistantRuntimeProvider>
     </div>
   );

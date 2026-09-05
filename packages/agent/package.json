@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./model-catalog": "./model-catalog.ts"
+    "./model-catalog": "./model-catalog.ts",
+    "./artifacts": "./artifacts.ts",
+    "./artifact-store": "./artifact-store.ts"
   },
   "scripts": {
     "info": "eve info",

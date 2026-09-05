@@ -1,5 +1,6 @@
 "use client";
 
+import { ArtifactCard } from "@/components/anchor-os/artifact-card.aui";
 import { File } from "@/components/assistant-ui/elements/file";
 import { ThreadFollowupSuggestions } from "@/components/assistant-ui/elements/follow-up-suggestions.aui";
 import { Image } from "@/components/assistant-ui/elements/image";
@@ -26,12 +27,14 @@ import {
 import { TooltipIconButton } from "@/components/assistant-ui/elements/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { isArtifactToolPart } from "@/lib/artifact-utils";
 import { cn } from "@/lib/utils";
 import {
   ActionBarMorePrimitive,
   ActionBarPrimitive,
   AuiIf,
   type AssistantState,
+  type GroupByContext,
   BranchPickerPrimitive,
   ComposerPrimitive,
   ErrorPrimitive,
@@ -39,6 +42,7 @@ import {
   MessagePrimitive,
   SuggestionPrimitive,
   ThreadPrimitive,
+  type PartState,
   type ToolCallMessagePartComponent,
   useAuiState,
 } from "@assistant-ui/react";
@@ -99,6 +103,24 @@ export type ThreadProps = {
 const EMPTY_COMPONENTS: ThreadComponents = {};
 
 const ThreadComponentsContext = createContext<ThreadComponents>(EMPTY_COMPONENTS);
+
+type AnchorGroupKey = "group-chainOfThought" | "group-tool" | "group-reasoning";
+
+const baseGroupBy = groupPartByType<AnchorGroupKey>({
+  reasoning: ["group-chainOfThought", "group-reasoning"],
+  "tool-call": ["group-chainOfThought", "group-tool"],
+  "standalone-tool-call": [],
+});
+
+// Artifact tool calls render as standalone cards outside the collapsed tool
+// group so they stay visible while the agent works.
+const artifactAwareGroupBy = (
+  part: PartState,
+  context: GroupByContext,
+): readonly AnchorGroupKey[] | null => {
+  if (isArtifactToolPart(part)) return null;
+  return baseGroupBy(part, context);
+};
 
 // Startup exposes a loading placeholder thread; treat it as a new chat so
 // the composer mounts centered. Loads after startup keep the docked layout.
@@ -418,13 +440,7 @@ const AssistantMessage: FC = () => {
         data-slot="aui_assistant-message-content"
         className="text-foreground px-2 leading-relaxed wrap-break-word"
       >
-        <MessagePrimitive.GroupedParts
-          groupBy={groupPartByType({
-            reasoning: ["group-chainOfThought", "group-reasoning"],
-            "tool-call": ["group-chainOfThought", "group-tool"],
-            "standalone-tool-call": [],
-          })}
-        >
+        <MessagePrimitive.GroupedParts groupBy={artifactAwareGroupBy}>
           {({ part, children }) => {
             switch (part.type) {
               case "group-chainOfThought":
@@ -461,6 +477,7 @@ const AssistantMessage: FC = () => {
               case "reasoning":
                 return <Reasoning {...part} />;
               case "tool-call":
+                if (isArtifactToolPart(part)) return <ArtifactCard {...part} />;
                 return part.toolUI ?? <ToolFallbackComponent {...part} />;
               case "data":
                 return part.dataRendererUI;
