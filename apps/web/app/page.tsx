@@ -1,12 +1,19 @@
 "use client";
 
+import { askQuestionToolkit } from "@/components/anchor-os/ask-question-toolkit";
 import { ArtifactWorkspace } from "@/components/anchor-os/artifact-panel";
 import { ArtifactsProvider } from "@/components/anchor-os/artifacts-context";
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEveAgentRuntime } from "@assistant-ui/eve";
-import { AssistantRuntimeProvider, AuiConfig, Suggestions, useAuiState } from "@assistant-ui/react";
+import {
+  AssistantRuntimeProvider,
+  AuiConfig,
+  Suggestions,
+  Tools,
+  useAuiState,
+} from "@assistant-ui/react";
 import { MessageSquareIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelOption } from "@/components/assistant-ui/elements/model-selector";
@@ -96,6 +103,7 @@ function ChatPane({ chat, selected, registerCancel, selectModel, updateChat }: C
   const config = useMemo(
     () =>
       AuiConfig({
+        tools: Tools({ toolkit: askQuestionToolkit }),
         suggestions: Suggestions([
           {
             title: "Explore this workspace",
