@@ -60,6 +60,10 @@ export async function updateChat(chatId: string, patch: ChatThreadPatchInput): P
   return parseChatThread(payload);
 }
 
+export function saveChatSession(chatId: string, session: ChatSessionCursor): Promise<ChatThread> {
+  return retryIdempotentChatWrite(() => updateChat(chatId, { session }));
+}
+
 export function archiveChat(chatId: string): Promise<ChatThread> {
   return updateChat(chatId, { archived: true });
 }
@@ -80,22 +84,48 @@ export async function saveChatEvents(
   sessionId: string,
   events: readonly unknown[],
 ): Promise<void> {
-  await request(
-    "POST",
-    `${CHATS_API}/${encodeURIComponent(chatId)}/events`,
-    JSON.stringify({ sessionId, events: [...events] }),
+  await retryIdempotentChatWrite(() =>
+    request(
+      "POST",
+      `${CHATS_API}/${encodeURIComponent(chatId)}/events`,
+      JSON.stringify({ sessionId, events: [...events] }),
+    ).then(() => undefined),
   );
 }
 
 export async function saveChatSnapshot(chatId: string, snapshot: ChatTurnSnapshot): Promise<void> {
-  await request(
-    "POST",
-    `${CHATS_API}/${encodeURIComponent(chatId)}/snapshot`,
-    JSON.stringify({
-      session: snapshot.session,
-      events: [...snapshot.events],
-      messages: [...snapshot.messages],
-    }),
+  await retryIdempotentChatWrite(() =>
+    request(
+      "POST",
+      `${CHATS_API}/${encodeURIComponent(chatId)}/snapshot`,
+      JSON.stringify({
+        session: snapshot.session,
+        events: [...snapshot.events],
+        messages: [...snapshot.messages],
+      }),
+    ).then(() => undefined),
+  );
+}
+
+async function retryIdempotentChatWrite<T>(write: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await write();
+    } catch (error: unknown) {
+      lastError = error;
+      if (!isRetryableChatWriteError(error) || attempt === 2) throw error;
+    }
+  }
+
+  throw lastError;
+}
+
+function isRetryableChatWriteError(error: unknown): boolean {
+  return (
+    error instanceof ChatClientError &&
+    (error.status === 0 || error.status === 429 || error.status >= 500)
   );
 }
 

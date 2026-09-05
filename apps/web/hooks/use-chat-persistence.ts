@@ -5,9 +5,9 @@ import type { MessageStreamEvent } from "eve/client";
 import type { EveMessageData, PrepareSend, UseEveAgentSnapshot } from "eve/react";
 import {
   saveChatEvents,
+  saveChatSession,
   saveChatSnapshot,
   savePendingChatMessage,
-  updateChat,
 } from "@/lib/chat-client";
 import {
   sanitizeChatMessages,
@@ -20,7 +20,7 @@ import type { ChatSessionCursor } from "@/lib/chat-types";
 type UseChatPersistenceOptions = {
   readonly chatId: string;
   readonly onBindingSettled: (chatId: string, failed: boolean) => void;
-  readonly onResumeFailed: () => void;
+  readonly onPersistenceError: (chatId: string, message: string | null) => void;
 };
 
 export function useChatPersistence(options: UseChatPersistenceOptions) {
@@ -31,20 +31,27 @@ export function useChatPersistence(options: UseChatPersistenceOptions) {
   const sessionIdRef = useRef<string | null>(null);
   const eventQueue = useRef<SanitizedStreamEvent[]>([]);
   const flushChain = useRef<Promise<void>>(Promise.resolve());
+  const cursorWriteChain = useRef<Promise<void>>(Promise.resolve());
 
   const persist = useCallback(
-    async (session: ChatSessionCursor) => {
-      try {
-        await updateChat(chatId, { session });
-        optionsRef.current.onBindingSettled(chatId, false);
-      } catch {
-        try {
-          await updateChat(chatId, { session });
-          optionsRef.current.onBindingSettled(chatId, false);
-        } catch {
-          optionsRef.current.onBindingSettled(chatId, true);
-        }
-      }
+    (session: ChatSessionCursor) => {
+      const next = cursorWriteChain.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            await saveChatSession(chatId, session);
+            optionsRef.current.onBindingSettled(chatId, false);
+            optionsRef.current.onPersistenceError(chatId, null);
+          } catch {
+            optionsRef.current.onBindingSettled(chatId, true);
+            optionsRef.current.onPersistenceError(
+              chatId,
+              "This chat's session cursor could not be saved.",
+            );
+          }
+        });
+      cursorWriteChain.current = next;
+      return next;
     },
     [chatId],
   );
@@ -57,8 +64,13 @@ export function useChatPersistence(options: UseChatPersistenceOptions) {
     eventQueue.current = [];
     try {
       await saveChatEvents(chat, sessionId, batch);
+      optionsRef.current.onPersistenceError(chat, null);
     } catch {
       eventQueue.current = [...batch, ...eventQueue.current];
+      optionsRef.current.onPersistenceError(
+        chat,
+        "New chat events could not be saved. They will be recovered when this workspace resumes.",
+      );
     }
   }, []);
 
@@ -95,10 +107,6 @@ export function useChatPersistence(options: UseChatPersistenceOptions) {
     [scheduleFlush],
   );
 
-  const handleError = useCallback(() => {
-    optionsRef.current.onResumeFailed();
-  }, []);
-
   const prepareSend = useCallback<PrepareSend>(async (payload) => {
     if (payload.message !== undefined) {
       await savePendingChatMessage(optionsRef.current.chatId, sanitizeUserMessage(payload.message));
@@ -112,11 +120,19 @@ export function useChatPersistence(options: UseChatPersistenceOptions) {
     const chat = optionsRef.current.chatId;
     flushChain.current = flushChain.current
       .then(async () => {
-        await saveChatSnapshot(chat, {
-          session: { sessionId: session.sessionId, streamIndex: session.streamIndex },
-          events: snapshot.events,
-          messages: sanitizeChatMessages(snapshot.data.messages),
-        });
+        try {
+          await saveChatSnapshot(chat, {
+            session: { sessionId: session.sessionId, streamIndex: session.streamIndex },
+            events: snapshot.events,
+            messages: sanitizeChatMessages(snapshot.data.messages),
+          });
+          optionsRef.current.onPersistenceError(chat, null);
+        } catch {
+          optionsRef.current.onPersistenceError(
+            chat,
+            "This chat's final transcript could not be saved. It will be repaired when this workspace resumes.",
+          );
+        }
       })
       .catch(() => undefined);
   }, []);
@@ -126,5 +142,5 @@ export function useChatPersistence(options: UseChatPersistenceOptions) {
     if (session !== null) void persist(session);
   }, [persist]);
 
-  return { handleSessionChange, retryBinding, prepareSend, handleError, handleEvent, handleFinish };
+  return { handleSessionChange, retryBinding, prepareSend, handleEvent, handleFinish };
 }

@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ChatClientError, createChat, listChats, loadChat, updateChat } from "./chat-client";
+import {
+  ChatClientError,
+  createChat,
+  listChats,
+  loadChat,
+  saveChatEvents,
+  saveChatSession,
+  saveChatSnapshot,
+  updateChat,
+} from "./chat-client";
 
 const THREAD_JSON = {
   id: "3f9d1c9e-8b7a-4c2d-9e1f-0a2b3c4d5e6f",
@@ -144,6 +153,68 @@ test("updateChat surfaces API error status and message", async () => {
       );
     },
   );
+});
+
+test("retries idempotent event writes without changing their event id", async () => {
+  let attempts = 0;
+  const event = {
+    type: "message.appended",
+    data: { messageDelta: "Hello" },
+    meta: { id: "event_1", at: "2026-09-05T00:00:00.000Z" },
+  };
+
+  await withFetch(
+    async (_input, init) => {
+      attempts += 1;
+      assert.equal(init?.body, JSON.stringify({ sessionId: "ses_123", events: [event] }));
+      return attempts === 1
+        ? jsonResponse({ error: "temporary failure" }, 503)
+        : jsonResponse({ ok: true });
+    },
+    () => saveChatEvents(THREAD_JSON.id, "ses_123", [event]),
+  );
+
+  assert.equal(attempts, 2);
+});
+
+test("retries idempotent session cursor writes without changing the cursor", async () => {
+  let attempts = 0;
+  const session = { sessionId: "ses_123", streamIndex: 3 };
+
+  await withFetch(
+    async (_input, init) => {
+      attempts += 1;
+      assert.equal(init?.body, JSON.stringify({ session }));
+      return attempts === 1
+        ? jsonResponse({ error: "temporary failure" }, 503)
+        : jsonResponse({ ...THREAD_JSON, eveSessionId: "ses_123", eveStreamIndex: 3 });
+    },
+    () => saveChatSession(THREAD_JSON.id, session),
+  );
+
+  assert.equal(attempts, 2);
+});
+
+test("retries idempotent snapshot writes with the same session cursor", async () => {
+  let attempts = 0;
+  const snapshot = {
+    session: { sessionId: "ses_123", streamIndex: 3 },
+    events: [],
+    messages: [],
+  };
+
+  await withFetch(
+    async (_input, init) => {
+      attempts += 1;
+      assert.equal(init?.body, JSON.stringify(snapshot));
+      return attempts === 1
+        ? jsonResponse({ error: "temporary failure" }, 503)
+        : jsonResponse({ ok: true });
+    },
+    () => saveChatSnapshot(THREAD_JSON.id, snapshot),
+  );
+
+  assert.equal(attempts, 2);
 });
 
 test("listChats rejects malformed thread payloads", async () => {

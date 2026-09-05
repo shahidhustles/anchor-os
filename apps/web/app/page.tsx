@@ -16,6 +16,7 @@ import {
   type LoadedChat,
 } from "@/lib/chat-client";
 import type { ChatThread } from "@/lib/chat-types";
+import { ClientError } from "eve/client";
 import { useEveAgentRuntime } from "@assistant-ui/eve";
 import {
   AssistantRuntimeProvider,
@@ -42,6 +43,7 @@ type Chat = {
   readonly title: string;
   readonly status: ChatStatus;
   readonly bindingFailed: boolean;
+  readonly persistenceError: string | null;
   readonly archiving: boolean;
   readonly history?: LoadedChat;
 };
@@ -63,6 +65,7 @@ function toChat(thread: ChatThread, history?: LoadedChat): Chat {
     title: thread.title,
     status: "idle",
     bindingFailed: false,
+    persistenceError: null,
     archiving: false,
     ...(history === undefined ? {} : { history }),
   };
@@ -110,6 +113,7 @@ type ChatPaneProps = {
   readonly selectModel: (chatId: string, modelId: AnchorModelId) => void;
   readonly updateChat: (chatId: string, state: RuntimeState) => void;
   readonly onBindingSettled: (chatId: string, failed: boolean) => void;
+  readonly onPersistenceError: (chatId: string, message: string | null) => void;
 };
 
 function ChatPane({
@@ -119,23 +123,27 @@ function ChatPane({
   selectModel,
   updateChat,
   onBindingSettled,
+  onPersistenceError,
 }: ChatPaneProps) {
   const modelIdRef = useRef(chat.modelId);
   const [resuming, setResuming] = useState(chat.history?.thread.eveSessionId !== null);
   const [resumeFailed, setResumeFailed] = useState(false);
   modelIdRef.current = chat.modelId;
   const headers = useCallback(() => ({ [ANCHOR_MODEL_HEADER]: modelIdRef.current }), []);
-  const onResumeFailed = useCallback(() => {
-    if (resuming) {
-      setResuming(false);
-      setResumeFailed(true);
-    }
-  }, [resuming]);
-  const { handleSessionChange, retryBinding, prepareSend, handleError, handleEvent, handleFinish } =
+  const handleEveError = useCallback(
+    (error: Error) => {
+      if (resuming && error instanceof ClientError && error.status === 404) {
+        setResuming(false);
+        setResumeFailed(true);
+      }
+    },
+    [resuming],
+  );
+  const { handleSessionChange, retryBinding, prepareSend, handleEvent, handleFinish } =
     useChatPersistence({
       chatId: chat.id,
       onBindingSettled,
-      onResumeFailed,
+      onPersistenceError,
     });
   const handleRuntimeFinish = useCallback(
     (snapshot: Parameters<typeof handleFinish>[0]) => {
@@ -161,7 +169,7 @@ function ChatPane({
               }),
         }),
     isDisabled: resuming || resumeFailed,
-    onError: handleError,
+    onError: handleEveError,
     onSessionChange: handleSessionChange,
     prepareSend,
     onEvent: handleEvent,
@@ -230,6 +238,15 @@ function ChatPane({
                     >
                       This workspace is unavailable. The saved transcript is still here, but this
                       chat cannot send messages.
+                    </p>
+                  ) : null}
+                  {chat.persistenceError ? (
+                    <p
+                      role="alert"
+                      className="mx-4 mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                      data-slot="chat-persistence-error"
+                    >
+                      {chat.persistenceError}
                     </p>
                   ) : null}
                   <Thread
@@ -374,6 +391,12 @@ export default function Home() {
   const onBindingSettled = useCallback((chatId: string, failed: boolean) => {
     setChats((current) =>
       current.map((chat) => (chat.id === chatId ? { ...chat, bindingFailed: failed } : chat)),
+    );
+  }, []);
+
+  const onPersistenceError = useCallback((chatId: string, message: string | null) => {
+    setChats((current) =>
+      current.map((chat) => (chat.id === chatId ? { ...chat, persistenceError: message } : chat)),
     );
   }, []);
 
@@ -549,6 +572,7 @@ export default function Home() {
               selectModel={selectModel}
               updateChat={updateChat}
               onBindingSettled={onBindingSettled}
+              onPersistenceError={onPersistenceError}
             />
           ))}
         </section>
