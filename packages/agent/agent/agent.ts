@@ -10,6 +10,9 @@ import { createQwenModel, qwenContextWindowTokens } from "./lib/qwen-model";
 import { ANCHOR_MODEL_AUTH_ATTRIBUTE, ANCHOR_MODEL_IDS } from "../model-catalog";
 
 export default defineAgent({
+  limits: {
+    sessionTimeoutMs: false,
+  },
   model: defineDynamic({
     events: {
       "step.started": (_event, context) => {

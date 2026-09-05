@@ -3,7 +3,19 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { renderToString } from "react-dom/server";
 
-import Home from "./page";
+import Home, { missingPendingMessages, shouldResumeChat } from "./page";
+
+const THREAD = {
+  id: "3f9d1c9e-8b7a-4c2d-9e1f-0a2b3c4d5e6f",
+  title: "New chat",
+  modelId: "muse-spark-1.3-contributor" as const,
+  eveSessionId: null,
+  eveStreamIndex: 0,
+  lastMessageAt: null,
+  archivedAt: null,
+  createdAt: "2026-09-05T00:00:00.000Z",
+  updatedAt: "2026-09-05T00:00:00.000Z",
+};
 
 test("renders the chat loading state on the server", () => {
   const html = renderToString(<Home />);
@@ -29,4 +41,42 @@ test("keeps saved chat history visible while a workspace cannot resume", () => {
   assert.match(source, /error instanceof ClientError && error\.status === 404/);
   assert.match(source, /data-slot="chat-resume-error"/);
   assert.match(source, /isDisabled: resuming \|\| resumeFailed/);
+});
+
+test("only resumes a chat that has a saved Eve session", () => {
+  assert.equal(shouldResumeChat(undefined), false);
+  assert.equal(shouldResumeChat({ thread: THREAD, events: [], messages: [] }), false);
+  assert.equal(
+    shouldResumeChat({
+      thread: { ...THREAD, eveSessionId: "ses_123" },
+      events: [],
+      messages: [],
+    }),
+    true,
+  );
+});
+
+test("keeps a pending database message visible until Eve projects it", () => {
+  const pending = {
+    id: "pending-123",
+    role: "user" as const,
+    parts: [{ type: "text", text: "Do not lose this" }],
+    metadata: {},
+  };
+
+  assert.deepEqual(missingPendingMessages([pending], []), [pending]);
+  assert.deepEqual(
+    missingPendingMessages(
+      [pending],
+      [{ role: "user", content: [{ type: "text", text: "Do not lose this" }] }],
+    ),
+    [],
+  );
+  assert.deepEqual(
+    missingPendingMessages(
+      [pending, { ...pending, id: "pending-456" }],
+      [{ role: "user", content: [{ type: "text", text: "Do not lose this" }] }],
+    ).map((message) => message.id),
+    ["pending-456"],
+  );
 });

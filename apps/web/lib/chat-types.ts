@@ -109,7 +109,18 @@ export type ChatDatabase = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      save_demo_chat_snapshot: {
+        Args: {
+          p_chat_id: string;
+          p_session_id: string;
+          p_stream_index: number;
+          p_events: readonly Record<string, unknown>[];
+          p_messages: readonly Record<string, unknown>[];
+        };
+        Returns: undefined;
+      };
+    };
   };
 };
 

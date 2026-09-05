@@ -28,7 +28,6 @@ export class ChatStoreError extends Error {
 }
 
 const EVE_SESSION_ALREADY_BOUND = "that eve session is already bound to another chat";
-const EVE_SESSION_MISMATCH = "that eve session does not match this chat";
 
 export type ChatTurnSnapshotInput = {
   readonly session: ChatSessionCursor;
@@ -194,20 +193,6 @@ export async function saveChatTurnSnapshot(
   chatId: string,
   snapshot: ChatTurnSnapshotInput,
 ): Promise<void> {
-  const thread = await getChatThread(client, chatId);
-  if (thread === null) {
-    throw new ChatStoreError("chat not found", 404);
-  }
-  if (thread.eveSessionId !== null && thread.eveSessionId !== snapshot.session.sessionId) {
-    throw new ChatStoreError(EVE_SESSION_MISMATCH, 409);
-  }
-
-  const { error: clearError } = await client
-    .from("chat_events")
-    .update({ stream_index: null })
-    .eq("eve_session_id", snapshot.session.sessionId);
-  if (clearError !== null) throw chatStoreError("clear chat event stream indexes", clearError);
-
   const eventRows: ChatEventInsert[] = snapshot.events.map((event) => ({
     event_id: event.meta.id,
     thread_id: chatId,
@@ -217,27 +202,17 @@ export async function saveChatTurnSnapshot(
     emitted_at: event.meta.at,
     stream_index: event.streamIndex,
   }));
-  if (eventRows.length > 0) {
-    const { error } = await client
-      .from("chat_events")
-      .upsert(eventRows, { onConflict: "event_id" });
-    if (error !== null) throw chatStoreError("reconcile chat events", error);
-  }
-
   const messageRows = snapshot.messages.map((message, index) =>
     toChatMessageInsert(chatId, message, index),
   );
-  const { error: deleteError } = await client
-    .from("chat_messages")
-    .delete()
-    .eq("thread_id", chatId);
-  if (deleteError !== null) throw chatStoreError("clear chat message projection", deleteError);
-  if (messageRows.length > 0) {
-    const { error } = await client.from("chat_messages").insert(messageRows);
-    if (error !== null) throw chatStoreError("replace chat message projection", error);
-  }
-
-  await updateChatThread(client, chatId, { session: snapshot.session });
+  const { error } = await client.rpc("save_demo_chat_snapshot", {
+    p_chat_id: chatId,
+    p_session_id: snapshot.session.sessionId,
+    p_stream_index: snapshot.session.streamIndex,
+    p_events: eventRows,
+    p_messages: messageRows,
+  });
+  if (error !== null) throw chatStoreError("save chat snapshot", error);
 }
 
 async function nextMessageSortOrder(client: ChatSupabaseClient, chatId: string): Promise<number> {
@@ -321,6 +296,9 @@ function toAnchorModelId(value: string): AnchorModelId {
 }
 
 function chatStoreError(action: string, cause: unknown): ChatStoreError {
+  if (postgresErrorCode(cause) === "P0002") {
+    return new ChatStoreError("chat not found", 404);
+  }
   if (postgresErrorCode(cause) === "23505") {
     return new ChatStoreError(EVE_SESSION_ALREADY_BOUND, 409);
   }

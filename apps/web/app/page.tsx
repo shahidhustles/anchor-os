@@ -16,6 +16,7 @@ import {
   type LoadedChat,
 } from "@/lib/chat-client";
 import type { ChatThread } from "@/lib/chat-types";
+import type { SanitizedChatMessage } from "@/lib/chat-sanitizer";
 import { ClientError } from "eve/client";
 import { useEveAgentRuntime } from "@assistant-ui/eve";
 import {
@@ -77,6 +78,80 @@ function titleFromMessage(message: string) {
   return `${normalized.slice(0, MAX_TITLE_LENGTH - 1).trimEnd()}…`;
 }
 
+export function shouldResumeChat(history: LoadedChat | undefined): boolean {
+  return history?.thread.eveSessionId != null;
+}
+
+type ProjectedMessage = {
+  readonly role: string;
+  readonly content: readonly unknown[];
+};
+
+export function missingPendingMessages(
+  savedMessages: readonly SanitizedChatMessage[],
+  projectedMessages: readonly ProjectedMessage[],
+): readonly SanitizedChatMessage[] {
+  const projectedUserTextCounts = new Map<string, number>();
+  for (const message of projectedMessages) {
+    if (message.role !== "user") continue;
+    const text = visibleMessageText(message.content);
+    projectedUserTextCounts.set(text, (projectedUserTextCounts.get(text) ?? 0) + 1);
+  }
+
+  return savedMessages.filter((message) => {
+    if (message.role !== "user" || !message.id.startsWith("pending-")) return false;
+    const text = visibleMessageText(message.parts);
+    const projectedCount = projectedUserTextCounts.get(text) ?? 0;
+    if (projectedCount === 0) return true;
+    projectedUserTextCounts.set(text, projectedCount - 1);
+    return false;
+  });
+}
+
+function visibleMessageText(parts: readonly unknown[]): string {
+  return parts
+    .flatMap((part) => {
+      if (typeof part !== "object" || part === null) return [];
+      if (!("type" in part) || typeof part.type !== "string") return [];
+      if (part.type === "text" && "text" in part && typeof part.text === "string") {
+        return [part.text];
+      }
+      if (
+        (part.type === "file" || part.type === "image") &&
+        "filename" in part &&
+        typeof part.filename === "string"
+      ) {
+        return [part.filename];
+      }
+      return [];
+    })
+    .join("\n")
+    .trim();
+}
+
+function PendingMessageRecovery({
+  messages,
+}: {
+  readonly messages: readonly SanitizedChatMessage[];
+}) {
+  const projectedMessages = useAuiState((state) => state.thread.messages);
+  const pendingMessages = missingPendingMessages(messages, projectedMessages);
+  if (pendingMessages.length === 0) return null;
+
+  return (
+    <div className="mx-4 mt-3 space-y-2" data-slot="pending-message-recovery">
+      {pendingMessages.map((message) => (
+        <div key={message.id} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+          <p className="text-xs font-medium text-amber-900">Saved before the agent accepted it</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-amber-950">
+            {visibleMessageText(message.parts) || "Message content is unavailable."}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type RuntimeState = {
   readonly status: ChatStatus;
   readonly title?: string;
@@ -126,7 +201,7 @@ function ChatPane({
   onPersistenceError,
 }: ChatPaneProps) {
   const modelIdRef = useRef(chat.modelId);
-  const [resuming, setResuming] = useState(chat.history?.thread.eveSessionId !== null);
+  const [resuming, setResuming] = useState(shouldResumeChat(chat.history));
   const [resumeFailed, setResumeFailed] = useState(false);
   modelIdRef.current = chat.modelId;
   const headers = useCallback(() => ({ [ANCHOR_MODEL_HEADER]: modelIdRef.current }), []);
@@ -221,6 +296,9 @@ function ChatPane({
                 />
               ) : (
                 <>
+                  {chat.history === undefined ? null : (
+                    <PendingMessageRecovery messages={chat.history.messages} />
+                  )}
                   {resuming ? (
                     <p
                       role="status"
