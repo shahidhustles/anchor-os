@@ -40,11 +40,24 @@ export function normalizeArtifactPath(path: string): string {
     .replace(/^\/+/, "");
 }
 
+/**
+ * Only these tools can create or modify workspace artifacts. Restricting the
+ * heuristic keeps other tool calls (questions, approvals, reads) rendering
+ * through their normal UI even when their text mentions an office file.
+ */
+const ARTIFACT_TOOLS = new Set(["bash", "write_file"]);
+
 export function isArtifactToolPart(part: {
   readonly type: string;
+  readonly toolName?: string;
   readonly argsText?: string;
 }): boolean {
-  return part.type === "tool-call" && extractArtifactPaths(part.argsText ?? "").length > 0;
+  return (
+    part.type === "tool-call" &&
+    part.toolName !== undefined &&
+    ARTIFACT_TOOLS.has(part.toolName) &&
+    extractArtifactPaths(part.argsText ?? "").length > 0
+  );
 }
 
 function normalizePaths(paths: readonly string[]): string[] {
