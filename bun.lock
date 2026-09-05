@@ -1,0 +1,28 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "anchor-os",
+    },
+    "apps/desktop": {
+      "name": "@anchor-os/desktop",
+      "version": "0.0.0",
+    },
+    "apps/web": {
+      "name": "@anchor-os/web",
+      "version": "0.0.0",
+    },
+    "packages/agent": {
+      "name": "@anchor-os/agent",
+      "version": "0.0.0",
+    },
+  },
+  "packages": {
+    "@anchor-os/agent": ["@anchor-os/agent@workspace:packages/agent"],
+
+    "@anchor-os/desktop": ["@anchor-os/desktop@workspace:apps/desktop"],
+
+    "@anchor-os/web": ["@anchor-os/web@workspace:apps/web"],
+  }
+}
