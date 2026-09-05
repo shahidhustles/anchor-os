@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "bun test app/page.test.tsx",
+    "test": "bun test app/page.test.tsx lib/artifact-utils.test.ts",
     "lint": "oxlint && oxfmt --check",
     "typecheck": "tsc --noEmit",
     "lint:fix": "oxlint --fix && oxfmt",

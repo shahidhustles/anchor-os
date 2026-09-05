@@ -10,6 +10,33 @@ const QUOTED_PATH_PATTERN = /["']([^"'\n]+\.(?:docx|xlsx))["']/gi;
 const BARE_PATH_PATTERN = /([A-Za-z0-9_.\-/]+\.(?:docx|xlsx))/gi;
 
 /**
+ * Shell metacharacters, glob headers, and dependency directories never appear
+ * in a real artifact path. Rejecting them keeps quoted compound commands like
+ * `sh -c 'cd app && ls -lh *.docx'` from being read as a file name.
+ */
+const IMPOSSIBLE_IN_PATH = /&&|\|\||[;|<>`$]/;
+const GLOB_LIKE_BASENAME = /^[*/?~]/;
+
+/**
+ * Only these tools can create or modify workspace artifacts. Restricting the
+ * heuristic keeps other tool calls (questions, approvals, reads) rendering
+ * through their normal UI even when their text mentions an office file.
+ */
+const ARTIFACT_TOOL_NAMES = new Set(["bash", "write_file"]);
+
+export function isArtifactToolName(toolName: string): boolean {
+  return ARTIFACT_TOOL_NAMES.has(toolName);
+}
+
+function isPlausibleArtifactPath(path: string): boolean {
+  if (IMPOSSIBLE_IN_PATH.test(path)) return false;
+  const basename = path.split("/").pop() ?? "";
+  if (GLOB_LIKE_BASENAME.test(basename)) return false;
+  if (path.includes("node_modules/")) return false;
+  return true;
+}
+
+/**
  * Pulls artifact file paths out of streamed tool-call text (bash commands,
  * write_file arguments). Quoted paths are matched first so names with
  * spaces survive, then bare tokens in the remainder.
@@ -45,8 +72,6 @@ export function normalizeArtifactPath(path: string): string {
  * heuristic keeps other tool calls (questions, approvals, reads) rendering
  * through their normal UI even when their text mentions an office file.
  */
-const ARTIFACT_TOOLS = new Set(["bash", "write_file"]);
-
 export function isArtifactToolPart(part: {
   readonly type: string;
   readonly toolName?: string;
@@ -55,7 +80,7 @@ export function isArtifactToolPart(part: {
   return (
     part.type === "tool-call" &&
     part.toolName !== undefined &&
-    ARTIFACT_TOOLS.has(part.toolName) &&
+    ARTIFACT_TOOL_NAMES.has(part.toolName) &&
     extractArtifactPaths(part.argsText ?? "").length > 0
   );
 }
@@ -64,7 +89,9 @@ function normalizePaths(paths: readonly string[]): string[] {
   const unique = new Map<string, string>();
   for (const path of paths) {
     const normalized = normalizeArtifactPath(path);
-    if (normalized !== "" && !unique.has(normalized)) unique.set(normalized, normalized);
+    if (normalized === "") continue;
+    if (!isPlausibleArtifactPath(normalized)) continue;
+    if (!unique.has(normalized)) unique.set(normalized, normalized);
   }
   return [...unique.values()];
 }

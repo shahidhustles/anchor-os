@@ -2,12 +2,14 @@
 
 import { memo } from "react";
 import { FileTextIcon, LoaderIcon, PanelRightOpenIcon, TableIcon, XCircleIcon } from "lucide-react";
-import type { ToolCallMessagePartProps } from "@assistant-ui/react";
+import type { AssistantState, ToolCallMessagePartProps } from "@assistant-ui/react";
+import { useAuiState } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
 import {
   artifactBasename,
   extractArtifactPaths,
   formatArtifactSize,
+  isArtifactToolName,
   type ArtifactEntry,
 } from "@/lib/artifact-utils";
 import { useArtifacts } from "./artifacts-context";
@@ -15,6 +17,24 @@ import { useArtifacts } from "./artifacts-context";
 type CardState = "creating" | "editing" | "processing" | "ready" | "failed";
 
 type ArtifactCardProps = ToolCallMessagePartProps;
+
+/**
+ * The workspace path is the artifact's identity, so each path renders exactly
+ * one card: at the latest tool call in the thread that mentions it. Earlier
+ * mentions render nothing instead of duplicating the card.
+ */
+const selectLatestArtifactCalls = (state: AssistantState): Map<string, string> => {
+  const latest = new Map<string, string>();
+  for (const message of state.thread.messages) {
+    for (const part of message.parts) {
+      if (part.type !== "tool-call" || !isArtifactToolName(part.toolName)) continue;
+      for (const path of extractArtifactPaths(part.argsText)) {
+        latest.set(path, part.toolCallId);
+      }
+    }
+  }
+  return latest;
+};
 
 const STATE_LABELS: Record<CardState, string> = {
   creating: "Creating",
@@ -126,8 +146,16 @@ function StateLine({
   return <span className="text-muted-foreground text-xs">{details.join(" · ")}</span>;
 }
 
-const ArtifactCardImpl: React.FC<ArtifactCardProps> = ({ argsText, status, isError }) => {
-  const paths = extractArtifactPaths(argsText ?? "");
+const ArtifactCardImpl: React.FC<ArtifactCardProps> = ({
+  toolCallId,
+  argsText,
+  status,
+  isError,
+}) => {
+  const latestCallIds = useAuiState(selectLatestArtifactCalls);
+  const paths = extractArtifactPaths(argsText ?? "").filter(
+    (path) => latestCallIds.get(path) === toolCallId,
+  );
   if (paths.length === 0) return null;
 
   return (
