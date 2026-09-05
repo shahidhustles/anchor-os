@@ -6,6 +6,9 @@ import { ArtifactsProvider } from "@/components/anchor-os/artifacts-context";
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useChatPersistence } from "@/hooks/use-chat-persistence";
+import { archiveChat, createChat, listChats } from "@/lib/chat-client";
+import type { ChatThread } from "@/lib/chat-types";
 import { useEveAgentRuntime } from "@assistant-ui/eve";
 import {
   AssistantRuntimeProvider,
@@ -14,13 +17,12 @@ import {
   Tools,
   useAuiState,
 } from "@assistant-ui/react";
-import { MessageSquareIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { Loader2Icon, MessageSquareIcon, PlusIcon, RotateCcwIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelOption } from "@/components/assistant-ui/elements/model-selector";
 import {
   ANCHOR_MODELS,
   ANCHOR_MODEL_HEADER,
-  DEFAULT_ANCHOR_MODEL_ID,
   isAnchorModelId,
   type AnchorModelId,
 } from "@anchor-os/agent/model-catalog";
@@ -32,23 +34,26 @@ type Chat = {
   readonly modelId: AnchorModelId;
   readonly title: string;
   readonly status: ChatStatus;
+  readonly bindingFailed: boolean;
 };
+
+type LoadState = "loading" | "ready" | "error";
 
 const NEW_CHAT_TITLE = "New chat";
 const MAX_TITLE_LENGTH = 50;
-const INITIAL_CHAT_ID = "initial-chat";
 
 const MODEL_OPTIONS: readonly ModelOption[] = ANCHOR_MODELS.map((model) => ({
   id: model.id,
   name: model.label,
 }));
 
-function createChat(id = crypto.randomUUID()): Chat {
+function toChat(thread: ChatThread): Chat {
   return {
-    id,
-    modelId: DEFAULT_ANCHOR_MODEL_ID,
-    title: NEW_CHAT_TITLE,
+    id: thread.id,
+    modelId: thread.modelId,
+    title: thread.title,
     status: "idle",
+    bindingFailed: false,
   };
 }
 
@@ -93,13 +98,32 @@ type ChatPaneProps = {
   readonly registerCancel: (chatId: string, cancel: () => void) => () => void;
   readonly selectModel: (chatId: string, modelId: AnchorModelId) => void;
   readonly updateChat: (chatId: string, state: RuntimeState) => void;
+  readonly onBindingSettled: (chatId: string, failed: boolean) => void;
 };
 
-function ChatPane({ chat, selected, registerCancel, selectModel, updateChat }: ChatPaneProps) {
+function ChatPane({
+  chat,
+  selected,
+  registerCancel,
+  selectModel,
+  updateChat,
+  onBindingSettled,
+}: ChatPaneProps) {
   const modelIdRef = useRef(chat.modelId);
   modelIdRef.current = chat.modelId;
   const headers = useCallback(() => ({ [ANCHOR_MODEL_HEADER]: modelIdRef.current }), []);
-  const runtime = useEveAgentRuntime({ headers });
+  const { handleSessionChange, retryBinding, prepareSend, handleEvent, handleFinish } =
+    useChatPersistence({
+      chatId: chat.id,
+      onBindingSettled,
+    });
+  const runtime = useEveAgentRuntime({
+    headers,
+    onSessionChange: handleSessionChange,
+    prepareSend,
+    onEvent: handleEvent,
+    onFinish: handleFinish,
+  });
   const config = useMemo(
     () =>
       AuiConfig({
@@ -136,17 +160,27 @@ function ChatPane({ chat, selected, registerCancel, selectModel, updateChat }: C
           <RuntimeObserver onStateChange={onStateChange} />
           <div className="h-full">
             <ArtifactWorkspace>
-              <Thread
-                autoFocus={selected}
-                modelPicker={{
-                  models: MODEL_OPTIONS,
-                  value: chat.modelId,
-                  onValueChange: (value) => {
-                    if (isAnchorModelId(value)) selectModel(chat.id, value);
-                  },
-                  disabled: chat.status === "running",
-                }}
-              />
+              {chat.bindingFailed ? (
+                <PaneNotice
+                  data-slot="session-binding-error"
+                  title="This chat could not save its agent session."
+                  description="Sending stays disabled until the session is saved."
+                  actionLabel="Retry"
+                  onAction={retryBinding}
+                />
+              ) : (
+                <Thread
+                  autoFocus={selected}
+                  modelPicker={{
+                    models: MODEL_OPTIONS,
+                    value: chat.modelId,
+                    onValueChange: (value) => {
+                      if (isAnchorModelId(value)) selectModel(chat.id, value);
+                    },
+                    disabled: chat.status === "running",
+                  }}
+                />
+              )}
             </ArtifactWorkspace>
           </div>
         </ArtifactsProvider>
@@ -155,10 +189,83 @@ function ChatPane({ chat, selected, registerCancel, selectModel, updateChat }: C
   );
 }
 
+type PaneNoticeProps = {
+  readonly title: string;
+  readonly description: string;
+  readonly actionLabel: string;
+  readonly onAction: () => void;
+  readonly "data-slot": string;
+};
+
+function PaneNotice({
+  title,
+  description,
+  actionLabel,
+  onAction,
+  "data-slot": dataSlot,
+}: PaneNoticeProps) {
+  return (
+    <div
+      className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
+      data-slot={dataSlot}
+    >
+      <p className="text-sm font-medium text-zinc-950">{title}</p>
+      <p className="max-w-sm text-sm text-zinc-500">{description}</p>
+      <Button type="button" variant="outline" size="sm" onClick={onAction}>
+        <RotateCcwIcon className="size-3.5" />
+        {actionLabel}
+      </Button>
+    </div>
+  );
+}
+
 export default function Home() {
-  const [chats, setChats] = useState<Chat[]>(() => [createChat(INITIAL_CHAT_ID)]);
-  const [selectedChatId, setSelectedChatId] = useState(() => chats[0]!.id);
+  const [chats, setChats] = useState<readonly Chat[]>([]);
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [creatingChat, setCreatingChat] = useState(false);
+  const [createFailed, setCreateFailed] = useState(false);
   const cancelByChatId = useRef(new Map<string, () => void>());
+  const initializeStarted = useRef(false);
+  const createInFlight = useRef(false);
+
+  const spawnChat = useCallback(() => {
+    if (createInFlight.current) return;
+    createInFlight.current = true;
+    setCreatingChat(true);
+    void createChat()
+      .then((thread) => {
+        const chat = toChat(thread);
+        setChats((current) => [chat, ...current]);
+        setSelectedChatId(chat.id);
+        setCreateFailed(false);
+      })
+      .catch(() => setCreateFailed(true))
+      .finally(() => {
+        createInFlight.current = false;
+        setCreatingChat(false);
+      });
+  }, []);
+
+  const initialize = useCallback(async () => {
+    setLoadState("loading");
+    try {
+      const threads = await listChats();
+      const loaded = threads.length === 0 ? [await createChat()] : threads;
+      const loadedChats = loaded.map(toChat);
+      setChats(loadedChats);
+      setSelectedChatId(loadedChats[0]?.id ?? null);
+      setLoadState("ready");
+    } catch {
+      setLoadState("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (initializeStarted.current) return;
+    initializeStarted.current = true;
+    void initialize();
+  }, [initialize]);
 
   const updateChat = useCallback((chatId: string, state: RuntimeState) => {
     setChats((current) =>
@@ -174,15 +281,15 @@ export default function Home() {
     );
   }, []);
 
+  const onBindingSettled = useCallback((chatId: string, failed: boolean) => {
+    setChats((current) =>
+      current.map((chat) => (chat.id === chatId ? { ...chat, bindingFailed: failed } : chat)),
+    );
+  }, []);
+
   const registerCancel = useCallback((chatId: string, cancel: () => void) => {
     cancelByChatId.current.set(chatId, cancel);
     return () => cancelByChatId.current.delete(chatId);
-  }, []);
-
-  const addChat = useCallback(() => {
-    const chat = createChat();
-    setChats((current) => [chat, ...current]);
-    setSelectedChatId(chat.id);
   }, []);
 
   const selectModel = useCallback((chatId: string, modelId: AnchorModelId) => {
@@ -196,13 +303,20 @@ export default function Home() {
   const deleteChat = useCallback(
     (chatId: string) => {
       cancelByChatId.current.get(chatId)?.();
+      void archiveChat(chatId).catch(() => undefined);
       const remaining = chats.filter((chat) => chat.id !== chatId);
-      const nextChats = remaining.length > 0 ? remaining : [createChat()];
 
-      setChats(nextChats);
-      if (chatId === selectedChatId) setSelectedChatId(nextChats[0]!.id);
+      setChats(remaining);
+      if (chatId !== selectedChatId) return;
+      const next = remaining[0];
+      if (next !== undefined) {
+        setSelectedChatId(next.id);
+      } else {
+        setSelectedChatId(null);
+        spawnChat();
+      }
     },
-    [chats, selectedChatId],
+    [chats, selectedChatId, spawnChat],
   );
 
   return (
@@ -221,7 +335,8 @@ export default function Home() {
               variant="ghost"
               size="icon"
               className="size-8"
-              onClick={addChat}
+              onClick={spawnChat}
+              disabled={creatingChat}
               aria-label="New chat"
               title="New chat"
             >
@@ -229,51 +344,83 @@ export default function Home() {
             </Button>
           </div>
 
-          <nav className="flex-1 overflow-y-auto p-2" aria-label="Chats">
-            <p className="px-2 py-2 text-xs font-medium text-zinc-500">Chats</p>
-            <div className="space-y-1">
-              {chats.map((chat) => (
-                <div
-                  key={chat.id}
-                  className={`group flex items-center rounded-lg ${
-                    selectedChatId === chat.id ? "bg-zinc-200/70" : "hover:bg-zinc-100"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedChatId(chat.id)}
-                    className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left text-sm"
-                    aria-current={selectedChatId === chat.id ? "page" : undefined}
-                  >
-                    {chat.status === "running" ? (
-                      <span
-                        className="size-2 shrink-0 animate-pulse rounded-full bg-emerald-500"
-                        aria-label="Working"
-                      />
-                    ) : (
-                      <MessageSquareIcon className="size-4 shrink-0 text-zinc-500" />
-                    )}
-                    <span className="truncate">{chat.title}</span>
-                  </button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="mr-1 size-7 shrink-0 text-zinc-500 opacity-0 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
-                    onClick={() => deleteChat(chat.id)}
-                    aria-label={`Delete ${chat.title}`}
-                    title="Delete chat"
-                  >
-                    <Trash2Icon className="size-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </nav>
+          {createFailed ? (
+            <p
+              role="alert"
+              className="px-4 py-2 text-xs text-red-600"
+              data-slot="chat-create-error"
+            >
+              Could not create the chat. Try again.
+            </p>
+          ) : null}
 
-          <div className="border-t border-zinc-200 px-4 py-3 text-xs text-zinc-500">
-            Chats reset when this app reloads.
-          </div>
+          <nav className="flex-1 overflow-y-auto p-2" aria-label="Chats">
+            {loadState === "loading" ? (
+              <div
+                className="flex items-center gap-2 px-2 py-2 text-xs text-zinc-500"
+                data-slot="chat-list-loading"
+              >
+                <Loader2Icon className="size-3.5 animate-spin" aria-hidden />
+                Loading chats…
+              </div>
+            ) : loadState === "error" ? (
+              <div className="px-2 py-2" data-slot="chat-list-error">
+                <p className="text-xs text-red-600">Chats could not be loaded.</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => {
+                    initializeStarted.current = false;
+                    void initialize();
+                  }}
+                >
+                  <RotateCcwIcon className="size-3.5" />
+                  Retry
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {chats.map((chat) => (
+                  <div
+                    key={chat.id}
+                    className={`group flex items-center rounded-lg ${
+                      selectedChatId === chat.id ? "bg-zinc-200/70" : "hover:bg-zinc-100"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setSelectedChatId(chat.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-left text-sm"
+                      aria-current={selectedChatId === chat.id ? "page" : undefined}
+                    >
+                      {chat.status === "running" ? (
+                        <span
+                          className="size-2 shrink-0 animate-pulse rounded-full bg-emerald-500"
+                          aria-label="Working"
+                        />
+                      ) : (
+                        <MessageSquareIcon className="size-4 shrink-0 text-zinc-500" />
+                      )}
+                      <span className="truncate">{chat.title}</span>
+                    </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="mr-1 size-7 shrink-0 text-zinc-500 opacity-0 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
+                      onClick={() => deleteChat(chat.id)}
+                      aria-label={`Delete ${chat.title}`}
+                      title="Delete chat"
+                    >
+                      <Trash2Icon className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </nav>
         </aside>
 
         <section className="min-w-0 flex-1 bg-white">
@@ -285,6 +432,7 @@ export default function Home() {
               registerCancel={registerCancel}
               selectModel={selectModel}
               updateChat={updateChat}
+              onBindingSettled={onBindingSettled}
             />
           ))}
         </section>

@@ -4,11 +4,11 @@ import { renderToString } from "react-dom/server";
 
 import Home from "./page";
 
-test("renders the model picker with the default model selected", () => {
+test("renders the chat loading state on the server", () => {
   const html = renderToString(<Home />);
 
-  assert.match(html, /data-slot="model-selector-trigger"/);
-  assert.match(html, /Muse Spark 1\.3 Contributor/);
+  assert.match(html, /data-slot="chat-list-loading"/);
+  assert.doesNotMatch(html, /data-slot="model-selector-trigger"/);
 });
 
 test("renders identical markup across server passes", () => {
