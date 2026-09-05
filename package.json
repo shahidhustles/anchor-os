@@ -12,7 +12,9 @@
     "web:test": "bun run --filter @anchor-os/web test",
     "agent:info": "bun run --filter @anchor-os/agent info",
     "agent:build": "bun run --filter @anchor-os/agent build",
-    "agent:test": "bun run --filter @anchor-os/agent test"
+    "agent:test": "bun run --filter @anchor-os/agent test",
+    "clean:sandboxes": "bash scripts/clean-eve.sh",
+    "clean:sandboxes:all": "bash scripts/clean-eve.sh --all"
   },
   "workspaces": [
     "apps/*",
