@@ -2,5 +2,17 @@
   "name": "@anchor-os/agent",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "info": "eve info",
+    "build": "eve build",
+    "test": "bun test agent/lib/opencode-model.test.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "4.0.59",
+    "ai": "7.0.93",
+    "eve": "0.52.1",
+    "microsandbox": "0.6.17",
+    "zod": "4.5.4"
+  }
 }

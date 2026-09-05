@@ -4,6 +4,15 @@
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.14",
+  "scripts": {
+    "dev": "bun run --filter @anchor-os/web dev",
+    "build": "bun run --filter @anchor-os/web build",
+    "lint": "bun run --filter @anchor-os/web lint",
+    "typecheck": "bun run --filter @anchor-os/web typecheck",
+    "agent:info": "bun run --filter @anchor-os/agent info",
+    "agent:build": "bun run --filter @anchor-os/agent build",
+    "agent:test": "bun run --filter @anchor-os/agent test"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
