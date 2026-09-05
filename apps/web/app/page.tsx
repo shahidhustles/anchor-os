@@ -380,6 +380,8 @@ function PaneNotice({
 
 export default function Home() {
   const [chats, setChats] = useState<readonly Chat[]>([]);
+  const chatsRef = useRef(chats);
+  chatsRef.current = chats;
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [creatingChat, setCreatingChat] = useState(false);
@@ -449,7 +451,7 @@ export default function Home() {
 
   const updateChat = useCallback(
     (chatId: string, state: RuntimeState) => {
-      const chat = chats.find((candidate) => candidate.id === chatId);
+      const chat = chatsRef.current.find((candidate) => candidate.id === chatId);
       const title =
         chat?.title === NEW_CHAT_TITLE && state.title !== undefined ? state.title : undefined;
       if (title !== undefined) {
@@ -457,13 +459,13 @@ export default function Home() {
       }
       setChats((current) =>
         current.map((chat) =>
-          chat.id === chatId
-            ? { ...chat, status: state.status, ...(title === undefined ? {} : { title }) }
-            : chat,
+          chat.id !== chatId || (chat.status === state.status && title === undefined)
+            ? chat
+            : { ...chat, status: state.status, ...(title === undefined ? {} : { title }) },
         ),
       );
     },
-    [chats, enqueueControlSave],
+    [enqueueControlSave],
   );
 
   const onBindingSettled = useCallback((chatId: string, failed: boolean) => {

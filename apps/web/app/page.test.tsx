@@ -43,6 +43,19 @@ test("keeps saved chat history visible while a workspace cannot resume", () => {
   assert.match(source, /isDisabled: resuming \|\| resumeFailed/);
 });
 
+test("keeps the runtime observer callback stable across chat state updates", () => {
+  const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const callbackStart = source.indexOf("const updateChat = useCallback");
+  const callbackEnd = source.indexOf("const onBindingSettled", callbackStart);
+  const callbackSource = source.slice(callbackStart, callbackEnd);
+
+  assert.notEqual(callbackStart, -1);
+  assert.notEqual(callbackEnd, -1);
+  assert.doesNotMatch(callbackSource, /\bchats\./);
+  assert.match(callbackSource, /\[enqueueControlSave\]/);
+  assert.match(source, /const chatsRef = useRef\(chats\)/);
+});
+
 test("only resumes a chat that has a saved Eve session", () => {
   assert.equal(shouldResumeChat(undefined), false);
   assert.equal(shouldResumeChat({ thread: THREAD, events: [], messages: [] }), false);
