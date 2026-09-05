@@ -12,6 +12,7 @@ import {
 type QuestionOption = {
   readonly id: string;
   readonly label: string;
+  readonly kind: string;
 };
 
 type AskQuestionArgs = {
@@ -26,13 +27,19 @@ type QuestionView = {
   readonly allowFreeform: boolean;
 };
 
+const REJECT_KINDS = new Set(["reject-once", "reject-always"]);
+
 function readQuestion(
   args: AskQuestionArgs,
   approval: ToolCallMessagePartProps["approval"],
 ): QuestionView {
   const options =
-    approval?.options?.map((option) => ({ id: option.id, label: option.label ?? option.id })) ??
-    args.options ??
+    approval?.options?.map((option) => ({
+      id: option.id,
+      label: option.label ?? option.id,
+      kind: option.kind,
+    })) ??
+    args.options?.map((option) => ({ ...option, kind: "_custom" })) ??
     [];
   return {
     prompt: approval?.prompt ?? args.prompt ?? "",
@@ -108,7 +115,13 @@ function AskQuestionCard({
   const submit = () => {
     const text = textValue.trim();
     if (text !== "") return void answer({ text });
-    if (selectedId !== null) return void answer({ optionId: selectedId });
+    if (selectedId !== null) {
+      const selected = question.options.find((option) => option.id === selectedId);
+      // Custom-kind options (eve's ask_question uses `_` kinds) require an
+      // explicit approved value; picking a declared option is an answer.
+      const approved = selected !== undefined && !REJECT_KINDS.has(selected.kind);
+      return void answer({ optionId: selectedId, approved });
+    }
     setError("Pick an option or type an answer first.");
   };
 
