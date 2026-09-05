@@ -7,7 +7,14 @@ import { Thread } from "@/components/assistant-ui/elements/thread.aui";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useChatPersistence } from "@/hooks/use-chat-persistence";
-import { archiveChat, createChat, listChats, loadChat, type LoadedChat } from "@/lib/chat-client";
+import {
+  archiveChat,
+  createChat,
+  listChats,
+  loadChat,
+  updateChat as persistChat,
+  type LoadedChat,
+} from "@/lib/chat-client";
 import type { ChatThread } from "@/lib/chat-types";
 import { useEveAgentRuntime } from "@assistant-ui/eve";
 import {
@@ -35,6 +42,7 @@ type Chat = {
   readonly title: string;
   readonly status: ChatStatus;
   readonly bindingFailed: boolean;
+  readonly archiving: boolean;
   readonly history?: LoadedChat;
 };
 
@@ -55,6 +63,7 @@ function toChat(thread: ChatThread, history?: LoadedChat): Chat {
     title: thread.title,
     status: "idle",
     bindingFailed: false,
+    archiving: false,
     ...(history === undefined ? {} : { history }),
   };
 }
@@ -283,6 +292,23 @@ export default function Home() {
   const cancelByChatId = useRef(new Map<string, () => void>());
   const initializeStarted = useRef(false);
   const createInFlight = useRef(false);
+  const controlSaveChains = useRef(new Map<string, Promise<void>>());
+  const [controlSaveError, setControlSaveError] = useState<string | null>(null);
+
+  const enqueueControlSave = useCallback(
+    (chatId: string, patch: Parameters<typeof persistChat>[1], message: string) => {
+      const previous = controlSaveChains.current.get(chatId) ?? Promise.resolve();
+      const next = previous
+        .catch(() => undefined)
+        .then(() => persistChat(chatId, patch))
+        .then(() => undefined)
+        .catch(() => {
+          setControlSaveError(message);
+        });
+      controlSaveChains.current.set(chatId, next);
+    },
+    [],
+  );
 
   const spawnChat = useCallback(() => {
     if (createInFlight.current) return;
@@ -326,19 +352,24 @@ export default function Home() {
     void initialize();
   }, [initialize]);
 
-  const updateChat = useCallback((chatId: string, state: RuntimeState) => {
-    setChats((current) =>
-      current.map((chat) =>
-        chat.id === chatId
-          ? {
-              ...chat,
-              status: state.status,
-              title: chat.title === NEW_CHAT_TITLE && state.title ? state.title : chat.title,
-            }
-          : chat,
-      ),
-    );
-  }, []);
+  const updateChat = useCallback(
+    (chatId: string, state: RuntimeState) => {
+      const chat = chats.find((candidate) => candidate.id === chatId);
+      const title =
+        chat?.title === NEW_CHAT_TITLE && state.title !== undefined ? state.title : undefined;
+      if (title !== undefined) {
+        enqueueControlSave(chatId, { title }, "This chat title could not be saved.");
+      }
+      setChats((current) =>
+        current.map((chat) =>
+          chat.id === chatId
+            ? { ...chat, status: state.status, ...(title === undefined ? {} : { title }) }
+            : chat,
+        ),
+      );
+    },
+    [chats, enqueueControlSave],
+  );
 
   const onBindingSettled = useCallback((chatId: string, failed: boolean) => {
     setChats((current) =>
@@ -351,29 +382,46 @@ export default function Home() {
     return () => cancelByChatId.current.delete(chatId);
   }, []);
 
-  const selectModel = useCallback((chatId: string, modelId: AnchorModelId) => {
-    setChats((current) =>
-      current.map((chat) =>
-        chat.id === chatId && chat.status === "idle" ? { ...chat, modelId } : chat,
-      ),
-    );
-  }, []);
+  const selectModel = useCallback(
+    (chatId: string, modelId: AnchorModelId) => {
+      const chat = chats.find((candidate) => candidate.id === chatId);
+      if (chat === undefined || chat.status !== "idle" || chat.modelId === modelId) return;
+      enqueueControlSave(chatId, { modelId }, "This model choice could not be saved.");
+      setChats((current) =>
+        current.map((chat) =>
+          chat.id === chatId && chat.status === "idle" ? { ...chat, modelId } : chat,
+        ),
+      );
+    },
+    [chats, enqueueControlSave],
+  );
 
   const deleteChat = useCallback(
     (chatId: string) => {
-      cancelByChatId.current.get(chatId)?.();
-      void archiveChat(chatId).catch(() => undefined);
-      const remaining = chats.filter((chat) => chat.id !== chatId);
-
-      setChats(remaining);
-      if (chatId !== selectedChatId) return;
-      const next = remaining[0];
-      if (next !== undefined) {
-        setSelectedChatId(next.id);
-      } else {
-        setSelectedChatId(null);
-        spawnChat();
-      }
+      if (chats.find((chat) => chat.id === chatId)?.archiving) return;
+      setChats((current) =>
+        current.map((chat) => (chat.id === chatId ? { ...chat, archiving: true } : chat)),
+      );
+      void archiveChat(chatId)
+        .then(() => {
+          cancelByChatId.current.get(chatId)?.();
+          const remaining = chats.filter((chat) => chat.id !== chatId);
+          setChats(remaining);
+          if (chatId !== selectedChatId) return;
+          const next = remaining[0];
+          if (next !== undefined) {
+            setSelectedChatId(next.id);
+          } else {
+            setSelectedChatId(null);
+            spawnChat();
+          }
+        })
+        .catch(() => {
+          setChats((current) =>
+            current.map((chat) => (chat.id === chatId ? { ...chat, archiving: false } : chat)),
+          );
+          setControlSaveError("This chat could not be archived.");
+        });
     },
     [chats, selectedChatId, spawnChat],
   );
@@ -410,6 +458,11 @@ export default function Home() {
               data-slot="chat-create-error"
             >
               Could not create the chat. Try again.
+            </p>
+          ) : null}
+          {controlSaveError ? (
+            <p role="alert" className="px-4 py-2 text-xs text-red-600" data-slot="chat-save-error">
+              {controlSaveError}
             </p>
           ) : null}
 
@@ -470,8 +523,9 @@ export default function Home() {
                       size="icon"
                       className="mr-1 size-7 shrink-0 text-zinc-500 opacity-0 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
                       onClick={() => deleteChat(chat.id)}
+                      disabled={chat.archiving}
                       aria-label={`Delete ${chat.title}`}
-                      title="Delete chat"
+                      title="Archive chat"
                     >
                       <Trash2Icon className="size-3.5" />
                     </Button>
@@ -480,6 +534,9 @@ export default function Home() {
               </div>
             )}
           </nav>
+          <p className="border-t border-zinc-200 px-4 py-3 text-xs text-zinc-500">
+            Chats are saved and return after reload.
+          </p>
         </aside>
 
         <section className="min-w-0 flex-1 bg-white">

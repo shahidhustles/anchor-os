@@ -14,3 +14,10 @@ test("renders the chat loading state on the server", () => {
 test("renders identical markup across server passes", () => {
   assert.equal(renderToString(<Home />), renderToString(<Home />));
 });
+
+test("explains that chats survive reloads", () => {
+  const html = renderToString(<Home />);
+
+  assert.match(html, /Chats are saved and return after reload\./);
+  assert.doesNotMatch(html, /Chats reset when this app reloads/);
+});

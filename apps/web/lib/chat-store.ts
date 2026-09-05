@@ -165,6 +165,7 @@ export async function createPendingChatMessage(
     metadata: {},
   });
   if (error !== null) throw chatStoreError("create pending chat message", error);
+  await updateChatThread(client, chatId, { lastMessageAt: new Date().toISOString() });
 }
 
 export async function insertChatEvents(
@@ -236,10 +237,7 @@ export async function saveChatTurnSnapshot(
     if (error !== null) throw chatStoreError("replace chat message projection", error);
   }
 
-  await updateChatThread(client, chatId, {
-    session: snapshot.session,
-    ...(snapshot.messages.length === 0 ? {} : { lastMessageAt: new Date().toISOString() }),
-  });
+  await updateChatThread(client, chatId, { session: snapshot.session });
 }
 
 async function nextMessageSortOrder(client: ChatSupabaseClient, chatId: string): Promise<number> {
