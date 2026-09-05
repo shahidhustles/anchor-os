@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { renderToString } from "react-dom/server";
 
-import Home, { missingPendingMessages, shouldResumeChat } from "./page";
+import Home, { isReusableDraftChat, missingPendingMessages, shouldResumeChat } from "./page";
 
 const THREAD = {
   id: "3f9d1c9e-8b7a-4c2d-9e1f-0a2b3c4d5e6f",
@@ -66,6 +66,25 @@ test("only resumes a chat that has a saved Eve session", () => {
       messages: [],
     }),
     true,
+  );
+});
+
+test("reuses only a chat that has never accepted a message", () => {
+  assert.equal(isReusableDraftChat({ status: "idle", hasAcceptedMessage: false }), true);
+  assert.equal(isReusableDraftChat({ status: "running", hasAcceptedMessage: false }), false);
+  assert.equal(isReusableDraftChat({ status: "idle", hasAcceptedMessage: true }), false);
+});
+
+test("selects a reusable draft before creating another database thread", () => {
+  const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const callbackStart = source.indexOf("const spawnChat = useCallback");
+  const callbackEnd = source.indexOf("const initialize = useCallback", callbackStart);
+  const callbackSource = source.slice(callbackStart, callbackEnd);
+
+  assert.notEqual(callbackStart, -1);
+  assert.notEqual(callbackEnd, -1);
+  assert.ok(
+    callbackSource.indexOf("find(isReusableDraftChat)") < callbackSource.indexOf("createChat()"),
   );
 });
 

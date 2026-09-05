@@ -43,6 +43,7 @@ type Chat = {
   readonly modelId: AnchorModelId;
   readonly title: string;
   readonly status: ChatStatus;
+  readonly hasAcceptedMessage: boolean;
   readonly bindingFailed: boolean;
   readonly persistenceError: string | null;
   readonly archiving: boolean;
@@ -65,6 +66,10 @@ function toChat(thread: ChatThread, history?: LoadedChat): Chat {
     modelId: thread.modelId,
     title: thread.title,
     status: "idle",
+    hasAcceptedMessage:
+      thread.lastMessageAt !== null ||
+      thread.eveSessionId !== null ||
+      history?.messages.some((message) => message.role === "user") === true,
     bindingFailed: false,
     persistenceError: null,
     archiving: false,
@@ -80,6 +85,13 @@ function titleFromMessage(message: string) {
 
 export function shouldResumeChat(history: LoadedChat | undefined): boolean {
   return history?.thread.eveSessionId != null;
+}
+
+export function isReusableDraftChat(chat: {
+  readonly hasAcceptedMessage: boolean;
+  readonly status: ChatStatus;
+}): boolean {
+  return chat.status === "idle" && !chat.hasAcceptedMessage;
 }
 
 type ProjectedMessage = {
@@ -154,6 +166,7 @@ function PendingMessageRecovery({
 
 type RuntimeState = {
   readonly status: ChatStatus;
+  readonly hasUserMessage: boolean;
   readonly title?: string;
 };
 
@@ -174,6 +187,7 @@ function RuntimeObserver({
   useEffect(() => {
     onStateChange({
       status: isRunning ? "running" : "idle",
+      hasUserMessage: firstUserMessage !== undefined,
       ...(firstUserText ? { title: titleFromMessage(firstUserText) } : {}),
     });
   }, [firstUserText, isRunning, onStateChange]);
@@ -409,6 +423,12 @@ export default function Home() {
 
   const spawnChat = useCallback(() => {
     if (createInFlight.current) return;
+    const reusableDraft = chatsRef.current.find(isReusableDraftChat);
+    if (reusableDraft !== undefined) {
+      setSelectedChatId(reusableDraft.id);
+      setCreateFailed(false);
+      return;
+    }
     createInFlight.current = true;
     setCreatingChat(true);
     void createChat()
@@ -459,9 +479,17 @@ export default function Home() {
       }
       setChats((current) =>
         current.map((chat) =>
-          chat.id !== chatId || (chat.status === state.status && title === undefined)
+          chat.id !== chatId ||
+          (chat.status === state.status &&
+            title === undefined &&
+            (!state.hasUserMessage || chat.hasAcceptedMessage))
             ? chat
-            : { ...chat, status: state.status, ...(title === undefined ? {} : { title }) },
+            : {
+                ...chat,
+                status: state.status,
+                hasAcceptedMessage: chat.hasAcceptedMessage || state.hasUserMessage,
+                ...(title === undefined ? {} : { title }),
+              },
         ),
       );
     },
