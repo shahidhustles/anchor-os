@@ -1,6 +1,6 @@
 # Model Router
 
-This package contains the Anchor OS model router MVP. It runs locally and has no network dependency.
+This package contains a heuristic router prototype and a separate Qwen3-0.6B fine-tuning workflow. See [the training guide](training/README.md) for dataset generation, LoRA training, evaluation and offline inference. The TypeScript API below currently uses heuristic scoring, not the trained model.
 
 The router accepts the first task and a non-empty candidate list. It returns only:
 
@@ -13,7 +13,7 @@ The router accepts the first task and a non-empty candidate list. It returns onl
 
 `profiles.ts` holds six provisional capability and hardware profiles. The values are placeholders for the hackathon MVP. The benchmark engine will replace them after the team measures code correctness, document structure, calculations, latency, throughput, context limits, and VRAM use on target hardware.
 
-The `multimodal` profile field is informational. It never removes a text-only model from the candidate pool because Anchor OS supplies image, scanned document, and video context through Vision MCP.
+The `multimodal` profile field is informational. It never removes a text-only model from the candidate pool under the approved assumption that agents receive image, scanned document, and video context through Vision MCP. This package does not implement that MCP.
 
 `routeWithLoadFallback` tries to load the selected local model before the caller locks the session. If loading fails, it removes that slug and routes across the remaining candidates. Once a model loads, the caller must keep it for the whole session unless the user manually changes it.
 
