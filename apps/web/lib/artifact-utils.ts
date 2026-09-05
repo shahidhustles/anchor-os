@@ -24,6 +24,15 @@ const GLOB_LIKE_BASENAME = /^[*/?~]/;
  */
 const ARTIFACT_TOOL_NAMES = new Set(["bash", "write_file"]);
 
+type ArtifactMessage = {
+  readonly parts: readonly {
+    readonly type: string;
+    readonly toolName?: string;
+    readonly argsText?: string;
+    readonly toolCallId?: string;
+  }[];
+};
+
 export function isArtifactToolName(toolName: string): boolean {
   return ARTIFACT_TOOL_NAMES.has(toolName);
 }
@@ -83,6 +92,21 @@ export function isArtifactToolPart(part: {
     ARTIFACT_TOOL_NAMES.has(part.toolName) &&
     extractArtifactPaths(part.argsText ?? "").length > 0
   );
+}
+
+export function findLatestArtifactToolCallId(
+  messages: readonly ArtifactMessage[],
+  path: string,
+): string | undefined {
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const parts = messages[messageIndex]?.parts ?? [];
+    for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = parts[partIndex];
+      if (part === undefined || !isArtifactToolPart(part)) continue;
+      if (extractArtifactPaths(part.argsText ?? "").includes(path)) return part.toolCallId;
+    }
+  }
+  return undefined;
 }
 
 function normalizePaths(paths: readonly string[]): string[] {

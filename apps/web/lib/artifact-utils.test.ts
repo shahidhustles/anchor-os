@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { extractArtifactPaths, isArtifactToolPart } from "./artifact-utils";
+import {
+  extractArtifactPaths,
+  findLatestArtifactToolCallId,
+  isArtifactToolPart,
+} from "./artifact-utils";
 
 test("extracts plain and quoted artifact paths from tool text", () => {
   assert.deepEqual(extractArtifactPaths("node build.js && ls -lh Approval_Note.docx"), [
@@ -55,4 +59,37 @@ test("isArtifactToolPart only matches bash and write_file tool calls", () => {
     isArtifactToolPart({ type: "tool-call", toolName: "read_file", argsText: "a.docx" }),
     false,
   );
+});
+
+test("finds the latest tool call for an artifact path with a stable primitive result", () => {
+  const toolCall = (toolCallId: string, argsText: string) => ({
+    type: "tool-call",
+    toolName: "bash",
+    toolCallId,
+    argsText,
+  });
+  const messages = [
+    { parts: [toolCall("create-call", "node create.js && ls Approval_Note.docx")] },
+    { parts: [toolCall("convert-call", "soffice /workspace/Approval_Note.docx")] },
+    { parts: [toolCall("inspect-call", "pandoc Approval_Note.docx")] },
+    { parts: [toolCall("validate-call", "validate.py /workspace/Approval_Note.docx")] },
+    {
+      parts: [
+        {
+          type: "tool-call",
+          toolName: "read_file",
+          toolCallId: "read-call",
+          argsText: "Approval_Note.docx",
+        },
+        toolCall("cleanup-call", "ls /workspace/Approval_Note.docx && rm create.js"),
+      ],
+    },
+  ];
+
+  const first = findLatestArtifactToolCallId(messages, "Approval_Note.docx");
+  const second = findLatestArtifactToolCallId(messages, "Approval_Note.docx");
+
+  assert.equal(first, "cleanup-call");
+  assert.equal(Object.is(first, second), true);
+  assert.equal(findLatestArtifactToolCallId(messages, "missing.docx"), undefined);
 });

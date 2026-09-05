@@ -10,14 +10,14 @@ import {
   TableIcon,
   XCircleIcon,
 } from "lucide-react";
-import type { AssistantState, ToolCallMessagePartProps } from "@assistant-ui/react";
+import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { useAuiState } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
 import {
   artifactBasename,
   extractArtifactPaths,
+  findLatestArtifactToolCallId,
   formatArtifactSize,
-  isArtifactToolName,
   type ArtifactEntry,
 } from "@/lib/artifact-utils";
 import { useArtifacts } from "./artifacts-context";
@@ -25,24 +25,6 @@ import { useArtifacts } from "./artifacts-context";
 type CardState = "creating" | "editing" | "processing" | "ready" | "failed";
 
 type ArtifactCardProps = ToolCallMessagePartProps;
-
-/**
- * The workspace path is the artifact's identity, so each path renders exactly
- * one card: at the latest tool call in the thread that mentions it. Earlier
- * mentions render nothing instead of duplicating the card.
- */
-const selectLatestArtifactCalls = (state: AssistantState): Map<string, string> => {
-  const latest = new Map<string, string>();
-  for (const message of state.thread.messages) {
-    for (const part of message.parts) {
-      if (part.type !== "tool-call" || !isArtifactToolName(part.toolName)) continue;
-      for (const path of extractArtifactPaths(part.argsText)) {
-        latest.set(path, part.toolCallId);
-      }
-    }
-  }
-  return latest;
-};
 
 const STATE_LABELS: Record<CardState, string> = {
   creating: "Creating",
@@ -186,15 +168,21 @@ const ArtifactCardImpl: React.FC<ArtifactCardProps> = ({
   status,
   isError,
 }) => {
-  const latestCallIds = useAuiState(selectLatestArtifactCalls);
-  const paths = extractArtifactPaths(argsText ?? "").filter(
-    (path) => latestCallIds.get(path) === toolCallId,
+  const paths = extractArtifactPaths(argsText ?? "");
+  // useAuiState compares snapshots by identity. A string stays stable while
+  // the matching paths stay unchanged, unlike a newly allocated array or Map.
+  const latestPathsKey = useAuiState((state) =>
+    paths
+      .filter((path) => findLatestArtifactToolCallId(state.thread.messages, path) === toolCallId)
+      .join("\n"),
   );
-  if (paths.length === 0) return null;
+  if (latestPathsKey === "") return null;
+
+  const latestPaths = latestPathsKey.split("\n");
 
   return (
     <div className="flex w-full flex-col gap-2 py-1">
-      {paths.map((path) => (
+      {latestPaths.map((path) => (
         <ArtifactCardForPath key={path} path={path} argsStatus={status} isError={isError} />
       ))}
     </div>
