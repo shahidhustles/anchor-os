@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { BrainIcon, ChevronDownIcon } from "lucide-react";
+import { AnchorIcon, ChevronDownIcon } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
@@ -27,7 +27,7 @@ const reasoningVariants = cva("aui-reasoning-root mb-4 w-full", {
     },
   },
   defaultVariants: {
-    variant: "outline",
+    variant: "ghost",
   },
 });
 
@@ -174,7 +174,7 @@ function ReasoningTrigger({
       )}
       {...props}
     >
-      <BrainIcon
+      <AnchorIcon
         data-slot="reasoning-trigger-icon"
         className="aui-reasoning-trigger-icon size-4 shrink-0"
       />
@@ -223,7 +223,6 @@ function ReasoningContent({
       )}
       {...props}
     >
-      <ReasoningFade side="top" />
       {children}
       {isPreview ? <ReasoningFade /> : null}
     </CollapsibleContent>
