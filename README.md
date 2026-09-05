@@ -16,14 +16,15 @@ anchor-os/
 
 ## Run locally
 
-1. Copy `apps/web/.env.example` to `apps/web/.env.local` and add an OpenCode Go
-   API key.
+1. Copy `apps/web/.env.example` to `apps/web/.env.local` and add the API keys
+   for the models you want to use.
 2. Run `bun install` from the repository root.
 3. Run `bun dev`, then open `http://localhost:3000`.
 
-The web app uses Muse Spark 1.3 Contributor through OpenCode Go. Chats live only
-in browser memory and reset on reload. Each chat receives its own Eve session
-and microsandbox workspace.
+The model picker offers Muse Spark 1.3 Contributor through OpenCode Go and a
+self-hosted Qwen 3.8 27B Max endpoint. Model selection is kept per chat and is
+locked while that chat is running. Chats live only in browser memory and reset
+on reload. Each chat receives its own Eve session and microsandbox workspace.
 
 Useful checks:
 

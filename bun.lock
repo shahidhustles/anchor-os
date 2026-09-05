@@ -13,6 +13,7 @@
       "name": "@anchor-os/web",
       "version": "0.0.0",
       "dependencies": {
+        "@anchor-os/agent": "workspace:*",
         "@assistant-ui/eve": "0.0.16",
         "@assistant-ui/react": "0.15.18",
         "@assistant-ui/react-markdown": "0.14.14",
@@ -47,6 +48,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@ai-sdk/openai": "4.0.59",
+        "@ai-sdk/openai-compatible": "3.0.44",
         "ai": "7.0.93",
         "eve": "0.52.1",
         "microsandbox": "0.6.17",
@@ -58,6 +60,8 @@
     "@ai-sdk/gateway": ["@ai-sdk/gateway@4.0.75", "", { "dependencies": { "@ai-sdk/provider": "4.0.10", "@ai-sdk/provider-utils": "5.0.36", "@vercel/oidc": "3.2.0" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-HOnhw3oXtBnboBF7kAKipjToCN6+5w6EuukiUKiULcxBitS+vbHRRv9IUBcq+Z1wkXcJjfywKrt5r++I6OYyXg=="],
 
     "@ai-sdk/openai": ["@ai-sdk/openai@4.0.59", "", { "dependencies": { "@ai-sdk/provider": "4.0.10", "@ai-sdk/provider-utils": "5.0.36" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-k9qS5GbERLOsrMw+qOIKrGhgu0QWkc5f9GTGf7my+xlUsMdZY24hZWAT0JHgBAg9FdvE7lWD7wi85eDyioGuUQ=="],
+
+    "@ai-sdk/openai-compatible": ["@ai-sdk/openai-compatible@3.0.44", "", { "dependencies": { "@ai-sdk/provider": "4.0.10", "@ai-sdk/provider-utils": "5.0.36" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-pK7mERd/aIJVtyQCe/nV3G3iEJCY1no8GHDOGbgpNC+petjSfsxj+ni0Q8WVVehTUiY9B04F3Xvir+icBgORCg=="],
 
     "@ai-sdk/provider": ["@ai-sdk/provider@4.0.10", "", { "dependencies": { "json-schema": "^0.4.0" } }, "sha512-fX2ENAc7iDpZ+Wp4+Rk06Usn/Ys7dI9uAkGv0jlF6XVrW13NkRWx5Ou+U6lIM2E1fTLkCs16GGrUAaVvroag7A=="],
 

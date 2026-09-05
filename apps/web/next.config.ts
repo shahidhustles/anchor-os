@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 import { withEve } from "eve/next";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@assistant-ui/eve", "@assistant-ui/react"],
+  transpilePackages: ["@anchor-os/agent", "@assistant-ui/eve", "@assistant-ui/react"],
 };
 
 export default withEve(withAui(nextConfig), {

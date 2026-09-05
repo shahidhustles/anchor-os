@@ -7,11 +7,19 @@ import { useEveAgentRuntime } from "@assistant-ui/eve";
 import { AssistantRuntimeProvider, AuiConfig, Suggestions, useAuiState } from "@assistant-ui/react";
 import { MessageSquareIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ANCHOR_MODELS,
+  ANCHOR_MODEL_HEADER,
+  DEFAULT_ANCHOR_MODEL_ID,
+  isAnchorModelId,
+  type AnchorModelId,
+} from "@anchor-os/agent/model-catalog";
 
 type ChatStatus = "idle" | "running";
 
 type Chat = {
   readonly id: string;
+  readonly modelId: AnchorModelId;
   readonly title: string;
   readonly status: ChatStatus;
 };
@@ -22,6 +30,7 @@ const MAX_TITLE_LENGTH = 50;
 function createChat(): Chat {
   return {
     id: crypto.randomUUID(),
+    modelId: DEFAULT_ANCHOR_MODEL_ID,
     title: NEW_CHAT_TITLE,
     status: "idle",
   };
@@ -66,11 +75,15 @@ type ChatPaneProps = {
   readonly chat: Chat;
   readonly selected: boolean;
   readonly registerCancel: (chatId: string, cancel: () => void) => () => void;
+  readonly selectModel: (chatId: string, modelId: AnchorModelId) => void;
   readonly updateChat: (chatId: string, state: RuntimeState) => void;
 };
 
-function ChatPane({ chat, selected, registerCancel, updateChat }: ChatPaneProps) {
-  const runtime = useEveAgentRuntime();
+function ChatPane({ chat, selected, registerCancel, selectModel, updateChat }: ChatPaneProps) {
+  const modelIdRef = useRef(chat.modelId);
+  modelIdRef.current = chat.modelId;
+  const headers = useCallback(() => ({ [ANCHOR_MODEL_HEADER]: modelIdRef.current }), []);
+  const runtime = useEveAgentRuntime({ headers });
   const config = useMemo(
     () =>
       AuiConfig({
@@ -103,7 +116,31 @@ function ChatPane({ chat, selected, registerCancel, updateChat }: ChatPaneProps)
     <div className={selected ? "h-full" : "hidden"} aria-hidden={!selected}>
       <AssistantRuntimeProvider runtime={runtime} config={config}>
         <RuntimeObserver onStateChange={onStateChange} />
-        <Thread autoFocus={selected} />
+        <header className="flex h-12 items-center border-b border-zinc-200 px-4">
+          <label className="sr-only" htmlFor={`model-${chat.id}`}>
+            Model
+          </label>
+          <select
+            id={`model-${chat.id}`}
+            value={chat.modelId}
+            disabled={chat.status === "running"}
+            onChange={(event) => {
+              if (isAnchorModelId(event.target.value)) {
+                selectModel(chat.id, event.target.value);
+              }
+            }}
+            className="max-w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium outline-none transition-colors hover:bg-zinc-50 focus:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {ANCHOR_MODELS.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.label}
+              </option>
+            ))}
+          </select>
+        </header>
+        <div className="h-[calc(100%-3rem)]">
+          <Thread autoFocus={selected} />
+        </div>
       </AssistantRuntimeProvider>
     </div>
   );
@@ -137,6 +174,14 @@ export default function Home() {
     const chat = createChat();
     setChats((current) => [chat, ...current]);
     setSelectedChatId(chat.id);
+  }, []);
+
+  const selectModel = useCallback((chatId: string, modelId: AnchorModelId) => {
+    setChats((current) =>
+      current.map((chat) =>
+        chat.id === chatId && chat.status === "idle" ? { ...chat, modelId } : chat,
+      ),
+    );
   }, []);
 
   const deleteChat = useCallback(
@@ -229,6 +274,7 @@ export default function Home() {
               chat={chat}
               selected={selectedChatId === chat.id}
               registerCancel={registerCancel}
+              selectModel={selectModel}
               updateChat={updateChat}
             />
           ))}
