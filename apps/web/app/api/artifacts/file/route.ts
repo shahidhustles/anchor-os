@@ -30,7 +30,7 @@ export async function GET(request: Request): Promise<Response> {
   return new Response(bytes as unknown as BodyInit, {
     headers: {
       "content-type": ARTIFACT_MEDIA_TYPES[entry.kind],
-      "content-disposition": `inline; filename="${encodeURIComponent(path.split("/").pop() ?? "artifact")}"`,
+      "content-disposition": `attachment; filename="${encodeURIComponent(path.split("/").pop() ?? "artifact")}"`,
       "cache-control": "no-store",
     },
   });

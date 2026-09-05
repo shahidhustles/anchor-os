@@ -1,7 +1,15 @@
 "use client";
 
 import { memo } from "react";
-import { FileTextIcon, LoaderIcon, PanelRightOpenIcon, TableIcon, XCircleIcon } from "lucide-react";
+import { useEveSession } from "@assistant-ui/eve";
+import {
+  DownloadIcon,
+  FileTextIcon,
+  LoaderIcon,
+  PanelRightOpenIcon,
+  TableIcon,
+  XCircleIcon,
+} from "lucide-react";
 import type { AssistantState, ToolCallMessagePartProps } from "@assistant-ui/react";
 import { useAuiState } from "@assistant-ui/react";
 import { cn } from "@/lib/utils";
@@ -54,34 +62,60 @@ function ArtifactCardForPath({
   readonly isError: boolean | undefined;
 }) {
   const { getEntry, open } = useArtifacts();
+  const session = useEveSession();
   const entry = getEntry(path);
 
   const state = deriveState(argsStatus, isError, entry);
   const clickable = state === "ready";
 
   return (
-    <button
-      type="button"
+    <div
       data-slot="anchor-artifact-card"
       data-state={state}
-      onClick={() => {
-        if (clickable) open(path);
-      }}
-      disabled={!clickable}
       className={cn(
-        "border-border bg-card hover:bg-accent/50 flex w-full max-w-md items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
-        clickable ? "cursor-pointer" : "cursor-default",
+        "border-border bg-card flex w-full max-w-md items-center gap-3 rounded-lg border px-3 py-2.5",
       )}
-      aria-label={clickable ? `Open ${artifactBasename(path)}` : artifactBasename(path)}
     >
       <KindIcon kind={entry?.kind} state={state} />
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate text-sm font-medium">{artifactBasename(path)}</span>
-        <StateLine state={state} entry={entry} />
-      </span>
-      {clickable && <PanelRightOpenIcon className="text-muted-foreground size-4 shrink-0" />}
-    </button>
+      <button
+        type="button"
+        onClick={() => {
+          if (clickable) open(path);
+        }}
+        disabled={!clickable}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-3 text-left",
+          clickable ? "cursor-pointer" : "cursor-default",
+        )}
+        aria-label={clickable ? `Open ${artifactBasename(path)}` : artifactBasename(path)}
+      >
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-sm font-medium">{artifactBasename(path)}</span>
+          <StateLine state={state} entry={entry} />
+        </span>
+        {clickable && <PanelRightOpenIcon className="text-muted-foreground size-4 shrink-0" />}
+      </button>
+      {clickable && entry !== undefined && session?.sessionId !== undefined && (
+        <a
+          href={artifactDownloadUrl(session.sessionId, entry)}
+          download={artifactBasename(path)}
+          aria-label={`Download ${artifactBasename(path)}`}
+          className="text-muted-foreground hover:bg-accent hover:text-accent-foreground shrink-0 rounded-md p-1.5 transition-colors"
+        >
+          <DownloadIcon className="size-4" />
+        </a>
+      )}
+    </div>
   );
+}
+
+function artifactDownloadUrl(sessionId: string, entry: ArtifactEntry): string {
+  const params = new URLSearchParams({
+    sessionId,
+    path: entry.path,
+    version: String(entry.version),
+  });
+  return `/api/artifacts/file?${params.toString()}`;
 }
 
 function deriveState(
