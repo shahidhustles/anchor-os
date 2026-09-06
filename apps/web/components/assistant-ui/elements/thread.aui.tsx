@@ -1,6 +1,11 @@
 "use client";
 
 import { ArtifactCard } from "@/components/anchor-os/artifact-card.aui";
+import {
+  ComposerAddAttachment,
+  ComposerAttachments,
+  UserMessageAttachments,
+} from "@/components/assistant-ui/elements/attachment.aui";
 import { File } from "@/components/assistant-ui/elements/file";
 import { ThreadFollowupSuggestions } from "@/components/assistant-ui/elements/follow-up-suggestions.aui";
 import { Image } from "@/components/assistant-ui/elements/image";
@@ -301,6 +306,7 @@ const Composer: FC<{ autoFocus: boolean; modelPicker?: ThreadModelPicker | undef
         data-slot="aui_composer-shell"
         className="border-border/60 focus-within:border-border flex w-full cursor-text flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) transition-[border-color]"
       >
+        <ComposerAttachments />
         <ComposerPrimitive.Input
           placeholder="Send a message..."
           className="aui-composer-input caret-primary placeholder:text-muted-foreground/60 max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base leading-6 outline-none"
@@ -318,23 +324,24 @@ const Composer: FC<{ autoFocus: boolean; modelPicker?: ThreadModelPicker | undef
 const ComposerAction: FC<{ modelPicker?: ThreadModelPicker | undefined }> = ({ modelPicker }) => {
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
-      {modelPicker ? (
-        <ModelSelectorRoot
-          models={modelPicker.models}
-          value={modelPicker.value}
-          onValueChange={modelPicker.onValueChange}
-        >
-          <ModelSelectorTrigger
-            variant="ghost"
-            size="sm"
-            disabled={modelPicker.disabled}
-            aria-label="Model"
-          />
-          <ModelSelectorContent />
-        </ModelSelectorRoot>
-      ) : (
-        <span />
-      )}
+      <div className="flex items-center gap-1.5">
+        <ComposerAddAttachment />
+        {modelPicker ? (
+          <ModelSelectorRoot
+            models={modelPicker.models}
+            value={modelPicker.value}
+            onValueChange={modelPicker.onValueChange}
+          >
+            <ModelSelectorTrigger
+              variant="ghost"
+              size="sm"
+              disabled={modelPicker.disabled}
+              aria-label="Model"
+            />
+            <ModelSelectorContent />
+          </ModelSelectorRoot>
+        ) : null}
+      </div>
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>
           <AuiIf condition={(s) => s.composer.dictation == null}>
@@ -573,6 +580,7 @@ const UserMessage: FC = () => {
       className="fade-in slide-in-from-bottom-1 animate-in grid auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 duration-150 [contain-intrinsic-size:auto_200px] [content-visibility:auto] [&:where(>*)]:col-start-2"
       data-role="user"
     >
+      <UserMessageAttachments />
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
         <div className="aui-user-message-content peer bg-muted text-foreground rounded-xl px-4 py-2 wrap-break-word empty:hidden">
           <MessagePrimitive.Parts />

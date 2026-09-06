@@ -3,6 +3,7 @@
 import { askQuestionToolkit } from "@/components/anchor-os/ask-question-toolkit";
 import { ArtifactWorkspace } from "@/components/anchor-os/artifact-panel";
 import { ArtifactsProvider } from "@/components/anchor-os/artifacts-context";
+import { inspectionReportToolkit } from "@/components/anchor-os/inspection-report-toolkit";
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -17,11 +18,17 @@ import {
 } from "@/lib/chat-client";
 import type { ChatThread } from "@/lib/chat-types";
 import type { SanitizedChatMessage } from "@/lib/chat-sanitizer";
+import {
+  assertInspectionReportAttachmentMessage,
+  InspectionReportAttachmentAdapter,
+} from "@/lib/inspection-report-attachment";
 import { ClientError } from "eve/client";
+import type { PrepareSend } from "eve/react";
 import { useEveAgentRuntime } from "@assistant-ui/eve";
 import {
   AssistantRuntimeProvider,
   AuiConfig,
+  defineToolkit,
   Suggestions,
   Tools,
   useAuiState,
@@ -59,6 +66,7 @@ const MODEL_OPTIONS: readonly ModelOption[] = ANCHOR_MODELS.map((model) => ({
   id: model.id,
   name: model.label,
 }));
+const ANCHOR_TOOLKIT = defineToolkit({ ...askQuestionToolkit, ...inspectionReportToolkit });
 
 function toChat(thread: ChatThread, history?: LoadedChat): Chat {
   return {
@@ -234,6 +242,14 @@ function ChatPane({
       onBindingSettled,
       onPersistenceError,
     });
+  const prepareInspectionReportSend = useCallback<PrepareSend>(
+    async (payload) => {
+      assertInspectionReportAttachmentMessage(payload.message);
+      return prepareSend(payload);
+    },
+    [prepareSend],
+  );
+  const attachmentAdapter = useMemo(() => new InspectionReportAttachmentAdapter(), []);
   const handleRuntimeFinish = useCallback(
     (snapshot: Parameters<typeof handleFinish>[0]) => {
       handleFinish(snapshot);
@@ -260,14 +276,17 @@ function ChatPane({
     isDisabled: resuming || resumeFailed,
     onError: handleEveError,
     onSessionChange: handleSessionChange,
-    prepareSend,
+    prepareSend: prepareInspectionReportSend,
+    adapters: { attachments: attachmentAdapter },
     onEvent: handleEvent,
     onFinish: handleRuntimeFinish,
   });
   const config = useMemo(
     () =>
       AuiConfig({
-        tools: Tools({ toolkit: askQuestionToolkit }),
+        tools: Tools({
+          toolkit: ANCHOR_TOOLKIT,
+        }),
         suggestions: Suggestions([
           {
             title: "Explore this workspace",
