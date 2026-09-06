@@ -5,6 +5,7 @@ import { useEveSession } from "@assistant-ui/eve";
 import { FileTextIcon, LoaderIcon, TableIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { artifactBasename, formatArtifactSize, type ArtifactEntry } from "@/lib/artifact-utils";
+import { sheetToStyledHtml } from "@/lib/sheet-html";
 import { useArtifacts } from "./artifacts-context";
 
 /** Chat on the left, artifact panel on the right; chat fills the width when closed. */
@@ -200,7 +201,7 @@ function XlsxView({
         ) : (
           <div
             className="anchor-xlsx-sheet"
-            // SheetJS emits a self-contained <table> from workbook cells.
+            // The renderer emits a self-contained <table> with escaped cell text.
             dangerouslySetInnerHTML={{ __html: sheets.html }}
           />
         )}
@@ -217,12 +218,12 @@ function useSheetHtml(bytes: ArrayBuffer | null, sheetIndex: number) {
 
   const build = useCallback(async (buffer: ArrayBuffer, index: number) => {
     const XLSX = await import("xlsx");
-    const workbook = XLSX.read(buffer);
+    const workbook = XLSX.read(buffer, { cellStyles: true });
     const name = workbook.SheetNames[index] ?? workbook.SheetNames[0];
     if (name === undefined) return null;
-    return XLSX.utils.sheet_to_html(
-      workbook.Sheets[name] as Parameters<typeof XLSX.utils.sheet_to_html>[0],
-    );
+    const sheet = workbook.Sheets[name];
+    if (sheet === undefined) return null;
+    return sheetToStyledHtml(sheet, XLSX);
   }, []);
 
   useEffect(() => {

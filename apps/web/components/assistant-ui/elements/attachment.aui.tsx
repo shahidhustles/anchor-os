@@ -1,6 +1,6 @@
 "use client";
 
-import { type PropsWithChildren, useState, type FC, isValidElement } from "react";
+import { type PropsWithChildren, useEffect, useState, type FC, isValidElement } from "react";
 import { XIcon, PlusIcon, FileText, Loader2Icon, AlertCircleIcon } from "lucide-react";
 import {
   AttachmentPrimitive,
@@ -8,6 +8,7 @@ import {
   MessagePrimitive,
   useAuiState,
   useAui,
+  useAuiEvent,
 } from "@assistant-ui/react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogTitle, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -192,24 +193,45 @@ export const UserMessageAttachments: FC = () => {
 };
 
 export const ComposerAttachments: FC = () => {
+  const [error, setError] = useState<string | null>(null);
+  const attachmentCount = useAuiState((s) => s.composer.attachments.length);
+
+  useAuiEvent("composer.attachmentAddError", ({ message }) => {
+    setError(message || "The report could not be attached.");
+  });
+
+  useEffect(() => {
+    if (attachmentCount > 0) setError(null);
+  }, [attachmentCount]);
+
   return (
-    <div className="aui-composer-attachments flex w-full flex-row items-center gap-2 overflow-x-auto empty:hidden">
-      <ComposerPrimitive.Attachments>{() => <AttachmentUI />}</ComposerPrimitive.Attachments>
+    <div className="empty:hidden">
+      <div className="aui-composer-attachments flex w-full flex-row items-center gap-2 overflow-x-auto empty:hidden">
+        <ComposerPrimitive.Attachments>{() => <AttachmentUI />}</ComposerPrimitive.Attachments>
+      </div>
+      {error !== null && (
+        <p role="alert" className="text-destructive px-2 pt-1 text-xs">
+          {error}
+        </p>
+      )}
     </div>
   );
 };
 
 export const ComposerAddAttachment: FC = () => {
+  const hasAttachment = useAuiState((s) => s.composer.attachments.length > 0);
+
   return (
     <ComposerPrimitive.AddAttachment
       render={
         <TooltipIconButton
-          tooltip="Add Attachment"
+          tooltip={hasAttachment ? "One report per message" : "Add inspection report"}
           side="bottom"
           variant="ghost"
           size="icon"
           className="aui-composer-add-attachment text-muted-foreground hover:text-foreground hover:bg-muted-foreground/15 size-7 rounded-full active:scale-[0.96] motion-reduce:transition-none"
-          aria-label="Add Attachment"
+          aria-label="Add inspection report"
+          disabled={hasAttachment}
         />
       }
     >

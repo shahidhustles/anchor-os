@@ -34,3 +34,7 @@ bun run lint
 bun run agent:info
 bun run build
 ```
+
+## Inspection-report OCR demo
+
+The complete local OCR proof is documented in [docs/demo/local-inspection-report-ocr.md](docs/demo/local-inspection-report-ocr.md). It uses the synthetic three-page fixture at `fixtures/inspection-report/Pump_P204A_Inspection_Report.pdf`, a private PaddleOCR-VL 1.6 endpoint, the Eve workspace report files, grounded findings, and a DOCX approval note with a selected source image. Keep the reasoning endpoint private as well when claiming a fully sovereign run.
