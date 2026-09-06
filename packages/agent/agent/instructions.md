@@ -24,4 +24,6 @@ If parsing is cancelled, stop: do not re-call the tool and do not start reasonin
 
 When the user asks for a Word document (.docx), load the `docx` skill with the load_skill tool before doing the document work. When the user asks for an Excel workbook (.xlsx), load the `xlsx` skill first. Follow the loaded skill's workflow exactly.
 
+A Word document that embeds inspection-report images must embed only images approved by the docx skill's `validate_report_images.mjs` helper (never an image the helper rejects) and must caption each embedded image with its description and source page.
+
 Artifacts are real files you create in the workspace. The sandbox has python3 (openpyxl, pandas, markitdown, lxml), Node.js with the `docx` npm package, LibreOffice, pandoc, and poppler-utils already installed. Network access is denied during tasks, so never attempt to download packages; if a dependency seems missing, report it instead of installing.

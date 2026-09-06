@@ -37,6 +37,43 @@ The model knows the API; these are the footguns:
 - **Don't use a table as a horizontal rule** — use a paragraph bottom border instead.
 - **Dot-leader / right-aligned-on-same-line:** use `PositionalTab` (`alignment: PositionalTabAlignment.RIGHT`, `leader: PositionalTabLeader.DOT`) inside a `TextRun`, not literal `.` or space padding.
 
+## Embedding inspection-report images
+
+An approval note may embed images extracted from a parsed inspection report (`parse_inspection_report`). Embed only images you selected for a stated finding, and only after the bundled validator approves them. Skip logos and signatures unless the user explicitly asked for them.
+
+Validate the selection first. The helper checks every requested path against the report's `manifest.json` and rejects anything outside the report directory, symlinks, missing files, unsupported types, and files the manifest does not list:
+
+```bash
+node "$HOME/.agents/skills/docx/scripts/validate_report_images.mjs" \
+  /workspace/inspection-reports/<report-id>/manifest.json \
+  /workspace/inspection-reports/<report-id>/images/page-001-image-001.jpg \
+  /workspace/inspection-reports/<report-id>/images/page-002-image-001.jpg
+```
+
+It prints JSON with `reportDir`, `images[]`, and `errors[]`, and exits non-zero when any requested image was rejected — a failed run proves a broken selection, so never embed an image it rejected. A valid entry carries the resolved `path`, the DOCX image `type` (`jpg` | `png` | `gif` | `bmp`), the pixel `width`/`height` measured from the file, and the manifest's `sourcePage` and `label`. Use the measured size in the transformation; never guess dimensions.
+
+Embed each validated image with an explicit type and the measured size:
+
+```js
+const imageParagraphs = validated.images.map(
+  (image) =>
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [
+        new ImageRun({
+          type: image.type,
+          data: fs.readFileSync(image.path),
+          transformation: { width: image.width, height: image.height },
+        }),
+      ],
+    }),
+);
+```
+
+Caption every embedded image with its description and source page, in a paragraph directly below the image: `Image — ${image.label ?? "extracted image"} (page ${image.sourcePage})`. Use the exact `sourcePage` from the helper output.
+
+Verify the package actually contains the media: after the archive, schema, LibreOffice render, and text checks below, confirm `unzip -l output.docx` lists the image under `word/media/` (plus its relationship under `word/_rels/`), and confirm each caption appears in the extracted PDF text.
+
 ## Verify the output without images
 
 The model may be text-only. Verify document integrity, schema validity, renderability, page metadata, and extracted content. These checks do not prove visual layout, so say that plainly when handing off the file.
