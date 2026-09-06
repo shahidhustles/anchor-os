@@ -8,6 +8,8 @@ CAPABILITIES = ('reasoning', 'coding', 'tool_use', 'document_qa',
 
 
 def validate_request(request):
+    if not isinstance(request, dict):
+        raise ValueError('Request must be an object')
     if not isinstance(request.get('user_task'), str) or not request['user_task'].strip():
         raise ValueError('user_task must be nonempty')
     models = request.get('candidate_models')
@@ -16,6 +18,8 @@ def validate_request(request):
         raise ValueError('candidate_models must contain nonempty slugs')
     if len(set(models)) != len(models) or not isinstance(profiles, list):
         raise ValueError('Duplicate slugs or missing profiles')
+    if any(not isinstance(p, dict) for p in profiles):
+        raise ValueError('Profiles must be objects')
     if len(profiles) != len(models) or {p['model_slug'] for p in profiles} != set(models):
         raise ValueError('Exactly one profile per candidate is required')
     for p in profiles:

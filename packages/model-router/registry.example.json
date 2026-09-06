@@ -1,0 +1,170 @@
+[
+  {
+    "profile": {
+      "model_slug": "qwen3.8-27b",
+      "capabilities": {
+        "reasoning": 0.91,
+        "coding": 0.88,
+        "tool_use": 0.94,
+        "document_qa": 0.93,
+        "structured_output": 0.94,
+        "instruction_following": 0.94,
+        "long_context": 0.96
+      },
+      "runtime": {
+        "tokens_per_second": 18,
+        "peak_vram_gb": 54,
+        "usable_context": 262144
+      },
+      "features": {
+        "tool_calling": true,
+        "multimodal": true
+      }
+    },
+    "provider": "openai-compatible",
+    "location": "local",
+    "auto_eligible": true,
+    "base_url": "http://127.0.0.1:8000/v1",
+    "served_model": "qwen3.8-27b"
+  },
+  {
+    "profile": {
+      "model_slug": "qwen2.5-coder-14b-instruct",
+      "capabilities": {
+        "reasoning": 0.82,
+        "coding": 0.97,
+        "tool_use": 0.87,
+        "document_qa": 0.68,
+        "structured_output": 0.88,
+        "instruction_following": 0.85,
+        "long_context": 0.86
+      },
+      "runtime": {
+        "tokens_per_second": 36,
+        "peak_vram_gb": 28,
+        "usable_context": 131072
+      },
+      "features": {
+        "tool_calling": true,
+        "multimodal": false
+      }
+    },
+    "provider": "openai-compatible",
+    "location": "local",
+    "auto_eligible": true,
+    "base_url": "http://127.0.0.1:8001/v1",
+    "served_model": "qwen2.5-coder-14b-instruct"
+  },
+  {
+    "profile": {
+      "model_slug": "deepseek-r1-distill-qwen-14b",
+      "capabilities": {
+        "reasoning": 0.97,
+        "coding": 0.86,
+        "tool_use": 0.62,
+        "document_qa": 0.7,
+        "structured_output": 0.78,
+        "instruction_following": 0.79,
+        "long_context": 0.82
+      },
+      "runtime": {
+        "tokens_per_second": 28,
+        "peak_vram_gb": 28,
+        "usable_context": 65536
+      },
+      "features": {
+        "tool_calling": false,
+        "multimodal": false
+      }
+    },
+    "provider": "openai-compatible",
+    "location": "local",
+    "auto_eligible": true,
+    "base_url": "http://127.0.0.1:8002/v1",
+    "served_model": "deepseek-r1-distill-qwen-14b"
+  },
+  {
+    "profile": {
+      "model_slug": "mistral-small-3.1-24b-instruct",
+      "capabilities": {
+        "reasoning": 0.86,
+        "coding": 0.83,
+        "tool_use": 0.87,
+        "document_qa": 0.89,
+        "structured_output": 0.88,
+        "instruction_following": 0.88,
+        "long_context": 0.88
+      },
+      "runtime": {
+        "tokens_per_second": 34,
+        "peak_vram_gb": 48,
+        "usable_context": 131072
+      },
+      "features": {
+        "tool_calling": true,
+        "multimodal": true
+      }
+    },
+    "provider": "openai-compatible",
+    "location": "local",
+    "auto_eligible": true,
+    "base_url": "http://127.0.0.1:8003/v1",
+    "served_model": "mistral-small-3.1-24b-instruct"
+  },
+  {
+    "profile": {
+      "model_slug": "gemma-3-27b-it",
+      "capabilities": {
+        "reasoning": 0.85,
+        "coding": 0.78,
+        "tool_use": 0.65,
+        "document_qa": 0.94,
+        "structured_output": 0.83,
+        "instruction_following": 0.86,
+        "long_context": 0.89
+      },
+      "runtime": {
+        "tokens_per_second": 22,
+        "peak_vram_gb": 52,
+        "usable_context": 131072
+      },
+      "features": {
+        "tool_calling": false,
+        "multimodal": true
+      }
+    },
+    "provider": "openai-compatible",
+    "location": "local",
+    "auto_eligible": true,
+    "base_url": "http://127.0.0.1:8004/v1",
+    "served_model": "gemma-3-27b-it"
+  },
+  {
+    "profile": {
+      "model_slug": "nemotron-3.5-lightning-30b-a3b",
+      "capabilities": {
+        "reasoning": 0.82,
+        "coding": 0.8,
+        "tool_use": 0.84,
+        "document_qa": 0.76,
+        "structured_output": 0.84,
+        "instruction_following": 0.83,
+        "long_context": 0.84
+      },
+      "runtime": {
+        "tokens_per_second": 76,
+        "peak_vram_gb": 32,
+        "usable_context": 131072
+      },
+      "features": {
+        "tool_calling": true,
+        "multimodal": false
+      }
+    },
+    "provider": "openai-compatible",
+    "location": "local",
+    "auto_eligible": true,
+    "base_url": "http://127.0.0.1:8005/v1",
+    "served_model": "nemotron-3.5-lightning-30b-a3b"
+  }
+]

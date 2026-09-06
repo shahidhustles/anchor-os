@@ -160,8 +160,12 @@ function isSufficient(profile: ModelProfile, requirements: TaskRequirements): bo
 }
 
 function rankModels(task: string, candidates: readonly ModelSlug[]): readonly RankedModel[] {
+  if (!task.trim()) throw new Error("Model router requires a nonempty task");
   const requirements = inferTaskRequirements(task);
-  const profiles = candidates.map(getModelProfile);
+  const profiles = candidates
+    .map(getModelProfile)
+    .filter((profile) => !requirements.requires_tool_calling || profile.features.tool_calling);
+  if (!profiles.length) throw new Error("No compatible candidate models");
 
   return profiles
     .map((profile) => {

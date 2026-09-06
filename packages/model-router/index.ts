@@ -10,3 +10,12 @@ export {
   type ModelSlug,
 } from "./profiles";
 export { routeModel, routeWithLoadFallback, type RouteEvent, type RouteResult } from "./router";
+export {
+  createLocalRouter,
+  selectSessionModel,
+  eligibleRequest,
+  type RoutingRequest,
+  type RoutingResult,
+  type SessionSelection,
+} from "./runtime";
+export { registrySchema, autoCandidates, type CandidateEndpoint } from "./registry";

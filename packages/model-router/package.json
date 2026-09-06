@@ -5,12 +5,19 @@
   "type": "module",
   "exports": {
     ".": "./index.ts",
-    "./profiles": "./profiles.ts"
+    "./profiles": "./profiles.ts",
+    "./runtime": "./runtime.ts",
+    "./eve": "./eve.ts"
   },
   "scripts": {
     "lint": "oxlint && oxfmt --check",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.44",
+    "eve": "0.52.1",
+    "zod": "4.5.4"
   },
   "devDependencies": {
     "@types/bun": "1.3.11",

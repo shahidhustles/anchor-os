@@ -1,0 +1,156 @@
+{
+  "split": "validation",
+  "partial": false,
+  "candidate_order_agreement_rate": 0.8325,
+  "label_meaning": "Agreement with synthetic MVP policy, not measured candidate performance",
+  "original": {
+    "count": 800,
+    "accuracy": 0.82875,
+    "accepted_rate": 0.9925,
+    "raw_valid_format_rate": 1.0,
+    "raw_invalid_slug_rate": 0.0,
+    "raw_constraint_violation_rate": 0.0075,
+    "latency_median_seconds": 0.819511257999693,
+    "latency_p95_seconds": 1.2574675300002127
+  },
+  "anonymous": {
+    "count": 406,
+    "accuracy": 0.8325123152709359,
+    "accepted_rate": 0.9876847290640394,
+    "raw_valid_format_rate": 1.0,
+    "raw_invalid_slug_rate": 0.0,
+    "raw_constraint_violation_rate": 0.012315270935960592,
+    "latency_median_seconds": 0.6749838240002646,
+    "latency_p95_seconds": 0.8902094180002678
+  },
+  "reversed": {
+    "count": 800,
+    "accuracy": 0.81875,
+    "accepted_rate": 0.985,
+    "raw_valid_format_rate": 1.0,
+    "raw_invalid_slug_rate": 0.0,
+    "raw_constraint_violation_rate": 0.015,
+    "latency_median_seconds": 0.8169154949996482,
+    "latency_p95_seconds": 1.2616657039998245
+  },
+  "winner_removed": {
+    "count": 681,
+    "accuracy": 0.8355359765051396,
+    "accepted_rate": 0.9911894273127754,
+    "raw_valid_format_rate": 1.0,
+    "raw_invalid_slug_rate": 0.0,
+    "raw_constraint_violation_rate": 0.00881057268722467,
+    "latency_median_seconds": 0.8034324339996601,
+    "latency_p95_seconds": 1.249880366999605
+  },
+  "families": {
+    "coding": {
+      "count": 160,
+      "accuracy": 0.8375,
+      "accepted_rate": 1.0,
+      "raw_valid_format_rate": 1.0,
+      "raw_invalid_slug_rate": 0.0,
+      "raw_constraint_violation_rate": 0.0,
+      "latency_median_seconds": 0.8447633730002053,
+      "latency_p95_seconds": 1.3067329249997783
+    },
+    "documents": {
+      "count": 200,
+      "accuracy": 0.875,
+      "accepted_rate": 1.0,
+      "raw_valid_format_rate": 1.0,
+      "raw_invalid_slug_rate": 0.0,
+      "raw_constraint_violation_rate": 0.0,
+      "latency_median_seconds": 0.775160296499962,
+      "latency_p95_seconds": 1.2385597069996948
+    },
+    "long_context": {
+      "count": 80,
+      "accuracy": 0.7375,
+      "accepted_rate": 0.925,
+      "raw_valid_format_rate": 1.0,
+      "raw_invalid_slug_rate": 0.0,
+      "raw_constraint_violation_rate": 0.075,
+      "latency_median_seconds": 0.8385425430001305,
+      "latency_p95_seconds": 1.1714575550004156
+    },
+    "reasoning": {
+      "count": 120,
+      "accuracy": 0.7083333333333334,
+      "accepted_rate": 1.0,
+      "raw_valid_format_rate": 1.0,
+      "raw_invalid_slug_rate": 0.0,
+      "raw_constraint_violation_rate": 0.0,
+      "latency_median_seconds": 0.8620727140005329,
+      "latency_p95_seconds": 1.3049934810005652
+    },
+    "simple": {
+      "count": 40,
+      "accuracy": 0.775,
+      "accepted_rate": 1.0,
+      "raw_valid_format_rate": 1.0,
+      "raw_invalid_slug_rate": 0.0,
+      "raw_constraint_violation_rate": 0.0,
+      "latency_median_seconds": 0.8244445540003653,
+      "latency_p95_seconds": 1.398310059999858
+    },
+    "spreadsheets": {
+      "count": 80,
+      "accuracy": 0.8875,
+      "accepted_rate": 1.0,
+      "raw_valid_format_rate": 1.0,
+      "raw_invalid_slug_rate": 0.0,
+      "raw_constraint_violation_rate": 0.0,
+      "latency_median_seconds": 0.8248792460003642,
+      "latency_p95_seconds": 1.3703447469997627
+    },
+    "tools": {
+      "count": 120,
+      "accuracy": 0.9,
+      "accepted_rate": 1.0,
+      "raw_valid_format_rate": 1.0,
+      "raw_invalid_slug_rate": 0.0,
+      "raw_constraint_violation_rate": 0.0,
+      "latency_median_seconds": 0.8314117539998733,
+      "latency_p95_seconds": 1.230651799000043
+    }
+  },
+  "checkpoint": "colab-2026-09-06",
+  "acceptance": "User accepted 82.875% validation accuracy for the hackathon MVP on 2026-09-06. Original 90% target remains unmet. Test split is untouched.",
+  "examples": [
+    {
+      "index": 0,
+      "variant": "original",
+      "family": "coding",
+      "anonymous": false,
+      "valid": true,
+      "correct": true,
+      "format_valid": true,
+      "invalid_slug": false,
+      "constraint_violation": false,
+      "seconds": 1.4745653800000582,
+      "raw": "{\"model_slug\":\"qwen2.5-coder-14b-instruct\",\"confidence\":0.639}",
+      "expected": {
+        "model_slug": "qwen2.5-coder-14b-instruct",
+        "confidence": 0.627
+      }
+    },
+    {
+      "index": 15,
+      "variant": "original",
+      "family": "documents",
+      "anonymous": true,
+      "valid": true,
+      "correct": false,
+      "format_valid": true,
+      "invalid_slug": false,
+      "constraint_violation": false,
+      "seconds": 0.6403409730000931,
+      "raw": "{\"model_slug\":\"model_812\",\"confidence\":0.95}",
+      "expected": {
+        "model_slug": "model_796",
+        "confidence": 0.644
+      }
+    }
+  ]
+}
