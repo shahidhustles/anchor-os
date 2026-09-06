@@ -39,10 +39,12 @@ test("renders the browser control switch off on the server", () => {
   const html = renderToString(<Home />);
 
   assert.match(html, /data-slot="browser-control"/);
-  assert.match(html, /data-slot="browser-control-status-off"/);
-  assert.match(html, /aria-pressed="false"/);
-  assert.doesNotMatch(html, /aria-pressed="true"/);
-  assert.doesNotMatch(html, /data-slot="browser-control-status-on"/);
+  assert.match(html, /role="switch"/);
+  assert.match(html, /data-slot="switch-thumb"/);
+  assert.match(html, /aria-checked="false"/);
+  assert.match(html, />Browser control</);
+  assert.doesNotMatch(html, /Off\. Eve has no browser access\./);
+  assert.doesNotMatch(html, /data-slot="browser-control-status-/);
 });
 
 test("mounts the browser control above the chat persistence note", () => {

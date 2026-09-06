@@ -10,6 +10,7 @@ import {
   browserControlMcpUrl,
   fetchBrowserControlStatus,
   parseBrowserControlHeader,
+  resolveBrowserControlSetting,
   resolveBrowserConnection,
 } from "./browser-control";
 
@@ -26,6 +27,12 @@ test("parses the browser control header strictly on", () => {
   expect(parseBrowserControlHeader(undefined)).toBe("off");
 });
 
+test("keeps the session browser setting when a resumed input response has no attribute", () => {
+  expect(resolveBrowserControlSetting(undefined, "on")).toBe("on");
+  expect(resolveBrowserControlSetting(undefined, "off")).toBe("off");
+  expect(resolveBrowserControlSetting("off", "on")).toBe("off");
+});
+
 test("an enabled healthy turn resolves the browser connection", () => {
   const config = resolveBrowserConnection({ ...ENABLED, status: ON });
   expect(config).not.toBeNull();
@@ -40,9 +47,7 @@ test("a disabled turn has no browser connection", () => {
   expect(
     resolveBrowserConnection({ requested: undefined, status: ON, sessionId: "ses_a" }),
   ).toBeNull();
-  expect(
-    resolveBrowserConnection({ requested: true, status: ON, sessionId: "ses_a" }),
-  ).toBeNull();
+  expect(resolveBrowserConnection({ requested: true, status: ON, sessionId: "ses_a" })).toBeNull();
 });
 
 test("an unhealthy turn has no browser connection even when enabled", () => {

@@ -34,6 +34,8 @@ export class PinchtabMcpBridge {
     { server: McpServer; transport: WebStandardStreamableHTTPServerTransport }
   >();
   private ownerSessionId: string | undefined;
+  private activeOwnerCalls = 0;
+  private anchoredTabId: string | undefined;
   private closed = false;
 
   private constructor(private readonly upstream: Client) {}
@@ -137,34 +139,134 @@ export class PinchtabMcpBridge {
     });
 
     server.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-      const busyError = this.assertOwner(readOwnerHeader(extra));
-      if (busyError !== null) {
-        return { content: [{ type: "text", text: busyError }], isError: true };
-      }
       if (!isPinchtabToolAllowed(request.params.name)) {
         throw new McpError(ErrorCode.MethodNotFound, `Tool not allowed: ${request.params.name}`);
       }
-      return await upstream.callTool({
-        name: request.params.name,
-        arguments: request.params.arguments,
-      });
+      const owner = this.acquireOwner(readOwnerHeader(extra));
+      if (typeof owner === "string") {
+        return { content: [{ type: "text", text: owner }], isError: true };
+      }
+      try {
+        const toolArguments = await this.routeToolArguments(
+          request.params.name,
+          request.params.arguments,
+        );
+        const result = await upstream.callTool({
+          name: request.params.name,
+          arguments: toolArguments,
+        });
+        if (request.params.name === "pinchtab_close_tab" && !isToolError(result)) {
+          this.anchoredTabId = undefined;
+        }
+        return result;
+      } finally {
+        owner.release();
+      }
     });
 
     return server;
   }
 
-  private assertOwner(eveSessionId: string | undefined): string | null {
+  private async routeToolArguments(
+    toolName: string,
+    toolArguments: Record<string, unknown> | undefined,
+  ): Promise<Record<string, unknown> | undefined> {
+    if (toolName !== "pinchtab_navigate") return toolArguments;
+
+    const explicitTabId = readNonEmptyString(toolArguments?.tabId);
+    if (explicitTabId !== undefined) {
+      this.anchoredTabId = explicitTabId;
+      return toolArguments;
+    }
+
+    const tabsResult = await this.upstream.callTool({
+      name: "pinchtab_list_tabs",
+      arguments: {},
+    });
+    const tabs = readTabs(tabsResult);
+    if (tabs === undefined) {
+      if (this.anchoredTabId !== undefined) return toolArguments;
+      throw new McpError(
+        ErrorCode.InternalError,
+        "Could not find the visible Chrome tab before navigation.",
+      );
+    }
+
+    if (this.anchoredTabId !== undefined && tabs.some((tab) => tab.id === this.anchoredTabId)) {
+      return toolArguments;
+    }
+
+    const target = tabs.find((tab) => isBlankTabUrl(tab.url)) ?? tabs[0];
+    if (target === undefined) return toolArguments;
+
+    this.anchoredTabId = target.id;
+    return { ...toolArguments, tabId: target.id };
+  }
+
+  private acquireOwner(eveSessionId: string | undefined): { release: () => void } | string {
     const caller =
       eveSessionId === undefined || eveSessionId === "" ? ANONYMOUS_OWNER : eveSessionId;
     if (this.ownerSessionId === undefined) {
       this.ownerSessionId = caller;
-      return null;
+      this.activeOwnerCalls = 1;
+      return { release: () => this.releaseOwner(caller) };
     }
     if (this.ownerSessionId !== caller) {
       return "Browser control is busy: another chat is using the browser. Try again once that chat finishes.";
     }
-    return null;
+    this.activeOwnerCalls += 1;
+    return { release: () => this.releaseOwner(caller) };
   }
+
+  private releaseOwner(caller: string): void {
+    if (this.ownerSessionId !== caller) return;
+    this.activeOwnerCalls -= 1;
+    if (this.activeOwnerCalls > 0) return;
+    this.activeOwnerCalls = 0;
+    this.ownerSessionId = undefined;
+  }
+}
+
+type PinchtabTab = { id: string; url: string };
+
+function readTabs(result: unknown): PinchtabTab[] | undefined {
+  if (!isRecord(result) || result.isError === true || !Array.isArray(result.content)) {
+    return undefined;
+  }
+
+  for (const block of result.content) {
+    if (!isRecord(block) || block.type !== "text" || typeof block.text !== "string") continue;
+    try {
+      const parsed: unknown = JSON.parse(block.text);
+      if (!isRecord(parsed) || !Array.isArray(parsed.tabs)) continue;
+      const tabs = parsed.tabs.flatMap((tab): PinchtabTab[] => {
+        if (!isRecord(tab) || typeof tab.id !== "string" || typeof tab.url !== "string") return [];
+        return [{ id: tab.id, url: tab.url }];
+      });
+      return tabs;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+function isToolError(result: unknown): boolean {
+  return isRecord(result) && result.isError === true;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
+function isBlankTabUrl(url: string): boolean {
+  return url === "" || url === "about:blank" || url.startsWith("chrome://newtab");
 }
 
 async function isInitializeBody(

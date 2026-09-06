@@ -14,6 +14,7 @@ import type { BrowserBridge } from "./types";
 
 type Calls = {
   startServer: number;
+  startInstance: number;
   stopServer: number;
   stopInstance: number;
   bridgeClose: number;
@@ -27,10 +28,12 @@ function makeDeps(
     startServerResult?: StartedPinchtabServer | null;
     instanceReady?: boolean;
     failCreateBridge?: boolean;
+    strategy?: string;
   } = {},
 ): { deps: BrowserControlDeps; calls: Calls } {
   const calls: Calls = {
     startServer: 0,
+    startInstance: 0,
     stopServer: 0,
     stopInstance: 0,
     bridgeClose: 0,
@@ -38,7 +41,11 @@ function makeDeps(
   };
 
   const pinchtab: PinchtabClient = {
-    readConfig: async () => ({ serverUrl: "http://127.0.0.1:9867", token: "token" }),
+    readConfig: async () => ({
+      serverUrl: "http://127.0.0.1:9867",
+      token: "token",
+      strategy: overrides.strategy ?? "explicit",
+    }),
     checkHealth: async () => overrides.healthy ?? true,
     waitForHealthy: async () => overrides.becomesHealthy ?? true,
     startServer: async () => {
@@ -49,7 +56,11 @@ function makeDeps(
       calls.stopServer += 1;
     },
     findOrCreateAnchorProfile: async () => ({ id: "prof_anchor", name: "Anchor OS" }),
-    startHeadedInstance: async () => ({ id: "inst_anchor", status: "running" }),
+    findRunningInstanceForProfile: async () => null,
+    startHeadedInstance: async () => {
+      calls.startInstance += 1;
+      return { id: `inst_anchor_${calls.startInstance}`, status: "running" };
+    },
     waitForInstanceRunning: async () => overrides.instanceReady ?? true,
     stopInstance: async () => {
       calls.stopInstance += 1;
@@ -81,7 +92,7 @@ test("starts off", () => {
   assert.equal(getBrowserControlState().status, "off");
 });
 
-test("enable with a healthy server reaches on without starting or stopping the server", async () => {
+test("enable arms browser control without launching Chrome", async () => {
   resetBrowserControlForTests();
   const { deps, calls } = makeDeps({ healthy: true });
 
@@ -89,13 +100,14 @@ test("enable with a healthy server reaches on without starting or stopping the s
   assert.equal(started.status, "on");
   assert.deepEqual(started.profile, { id: "prof_anchor", name: "Anchor OS" });
   assert.equal(calls.startServer, 0);
+  assert.equal(calls.startInstance, 0);
   assert.equal(calls.bridgeCreated, 1);
 
   const disabled = await disableBrowserControl();
   assert.equal(disabled.status, "off");
   assert.equal(calls.stopServer, 0, "must not stop a pre-existing server");
   assert.equal(calls.bridgeClose, 1);
-  assert.equal(calls.stopInstance, 1, "closes the owned browser instance");
+  assert.equal(calls.stopInstance, 0, "there is no browser instance before the first tool call");
 });
 
 test("enable starts an owned server when unhealthy and stops it on disable", async () => {
@@ -139,19 +151,137 @@ test("failed server start leaves an error state with nothing owned", async () =>
   assert.equal(calls.stopServer, 0);
 });
 
-test("failed instance readiness cleans up the owned instance and server", async () => {
+test("enable fails closed when PinchTab would manage browser startup itself", async () => {
   resetBrowserControlForTests();
-  const { deps, calls } = makeDeps({
-    healthy: false,
-    becomesHealthy: true,
-    startServerResult: { pid: 1, url: "http://127.0.0.1:9867", token: "token" },
-    instanceReady: false,
-  });
+  const { deps, calls } = makeDeps({ strategy: "always-on" });
 
   const result = await enableBrowserControl(deps);
+
   assert.equal(result.status, "error");
+  assert.match(result.error ?? "", /explicit strategy/);
+  assert.equal(calls.startServer, 0);
+  assert.equal(calls.startInstance, 0);
+});
+
+test("the first browser tool call launches the headed profile", async () => {
+  resetBrowserControlForTests();
+  const { deps, calls } = makeDeps();
+  await enableBrowserControl(deps);
+
+  const request = new Request("http://127.0.0.1:3000/api/browser-control/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "pinchtab_navigate", arguments: { url: "https://example.com" } },
+      id: 1,
+    }),
+  });
+  const response = await handleBrowserControlMcpRequest(request);
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.startInstance, 1);
+
+  await disableBrowserControl();
+  assert.equal(calls.stopInstance, 1, "disable stops the instance Anchor OS launched");
+});
+
+test("disable leaves a pre-existing browser instance running", async () => {
+  resetBrowserControlForTests();
+  const { deps, calls } = makeDeps();
+  deps.pinchtab.findRunningInstanceForProfile = async () => ({
+    id: "inst_preexisting",
+    profileId: "prof_anchor",
+    status: "running",
+  });
+  await enableBrowserControl(deps);
+
+  const request = new Request("http://127.0.0.1:3000/api/browser-control/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "pinchtab_snapshot", arguments: {} },
+      id: 1,
+    }),
+  });
+  await handleBrowserControlMcpRequest(request);
+  await disableBrowserControl();
+
+  assert.equal(calls.startInstance, 0);
+  assert.equal(calls.stopInstance, 0);
+});
+
+test("MCP setup and tool discovery do not launch Chrome", async () => {
+  resetBrowserControlForTests();
+  const { deps, calls } = makeDeps();
+  await enableBrowserControl(deps);
+
+  for (const method of ["initialize", "tools/list", "ping"]) {
+    const request = new Request("http://127.0.0.1:3000/api/browser-control/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", method, id: 1 }),
+    });
+    assert.equal((await handleBrowserControlMcpRequest(request)).status, 200);
+  }
+
+  assert.equal(calls.startInstance, 0);
+});
+
+test("a later browser call relaunches the profile after Chrome closes", async () => {
+  resetBrowserControlForTests();
+  const { deps, calls } = makeDeps();
+  let runningInstance: { id: string; status: string } | null = null;
+  deps.pinchtab.findRunningInstanceForProfile = async () => runningInstance;
+  deps.pinchtab.startHeadedInstance = async () => {
+    calls.startInstance += 1;
+    runningInstance = { id: `inst_anchor_${calls.startInstance}`, status: "running" };
+    return runningInstance;
+  };
+  await enableBrowserControl(deps);
+
+  const toolRequest = () =>
+    new Request("http://127.0.0.1:3000/api/browser-control/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: { name: "pinchtab_snapshot", arguments: {} },
+        id: 1,
+      }),
+    });
+
+  await handleBrowserControlMcpRequest(toolRequest());
+  assert.equal(calls.startInstance, 1);
+  runningInstance = null;
+  await handleBrowserControlMcpRequest(toolRequest());
+  assert.equal(calls.startInstance, 2);
+});
+
+test("failed instance readiness returns an MCP error and cleans up the instance", async () => {
+  resetBrowserControlForTests();
+  const { deps, calls } = makeDeps({ instanceReady: false });
+  await enableBrowserControl(deps);
+
+  const request = new Request("http://127.0.0.1:3000/api/browser-control/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "pinchtab_navigate", arguments: { url: "https://example.com" } },
+      id: 1,
+    }),
+  });
+
+  const response = await handleBrowserControlMcpRequest(request);
+  assert.equal(response.status, 503);
   assert.equal(calls.stopInstance, 1);
-  assert.equal(calls.stopServer, 1);
+  assert.equal(calls.stopServer, 0);
 });
 
 test("failed bridge creation is an error", async () => {

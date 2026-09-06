@@ -32,6 +32,14 @@ export function parseBrowserControlHeader(value: string | null | undefined): Bro
   return value?.trim().toLowerCase() === "on" ? "on" : "off";
 }
 
+export function resolveBrowserControlSetting(
+  current: unknown,
+  initiator: unknown,
+): BrowserControlSetting {
+  if (current === "on" || current === "off") return current;
+  return initiator === "on" ? "on" : "off";
+}
+
 export function browserControlMcpUrl(
   env: Record<string, string | undefined> = process.env,
 ): string {
@@ -60,7 +68,9 @@ export async function fetchBrowserControlStatus(
   }
 }
 
-export function resolveBrowserConnection(input: BrowserConnectionInput): BrowserConnectionConfig | null {
+export function resolveBrowserConnection(
+  input: BrowserConnectionInput,
+): BrowserConnectionConfig | null {
   if (input.requested !== "on") return null;
   if (input.status.status !== "on") return null;
   return {

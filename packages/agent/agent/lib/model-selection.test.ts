@@ -10,3 +10,8 @@ test("falls back to Muse for a missing or unknown model id", () => {
   expect(resolveModelId(undefined)).toBe(ANCHOR_MODEL_IDS.muse);
   expect(resolveModelId("unknown-model")).toBe(ANCHOR_MODEL_IDS.muse);
 });
+
+test("keeps the session model when a resumed input response has no model attribute", () => {
+  expect(resolveModelId(undefined, ANCHOR_MODEL_IDS.qwen)).toBe(ANCHOR_MODEL_IDS.qwen);
+  expect(resolveModelId("unknown-model", ANCHOR_MODEL_IDS.qwen)).toBe(ANCHOR_MODEL_IDS.muse);
+});

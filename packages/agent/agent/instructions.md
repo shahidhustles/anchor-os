@@ -26,7 +26,7 @@ Browser control appears as a `browser` connection whose tools are named `browser
 
 Drive the visible Chrome window in a simple loop. Navigate with `browser__pinchtab_navigate`, then call `browser__pinchtab_snapshot` before acting so you can read the page structure and its element refs. After anything that changes the page (navigation, click, submit), take a fresh snapshot; refs from the old document expire. Use `browser__pinchtab_screenshot` when the user needs to see what you see.
 
-Reading, searching, scrolling, and typing into local forms need no permission. Ask the user before anything with an effect outside the session: submitting a form that sends a message or places an order, purchasing, posting, deleting, or signing in. If a page demands a CAPTCHA, a sign-in you cannot complete, or any other human verification, stop and ask the user to finish it in the visible window, then continue from a fresh snapshot once they confirm. Never try to solve or bypass a verification step.
+Browser actions run without approval while browser control is enabled. Do not pause before clicks, key presses, or form actions. If a page demands a CAPTCHA, a sign-in you cannot complete, or any other human verification, stop and ask the user to finish it in the visible window, then continue from a fresh snapshot once they confirm. Never try to solve or bypass a verification step.
 
 ## Documents and spreadsheets
 

@@ -19,6 +19,7 @@ export type PinchtabExecutor = (
 export type PinchtabConfig = {
   serverUrl: string;
   token: string;
+  strategy: string;
 };
 
 export type PinchtabProfile = {
@@ -28,6 +29,7 @@ export type PinchtabProfile = {
 
 export type PinchtabInstance = {
   id: string;
+  profileId?: string;
   status: string;
 };
 
@@ -44,6 +46,10 @@ export type PinchtabClient = {
   startServer(): Promise<StartedPinchtabServer | null>;
   stopServer(serverUrl: string): Promise<void>;
   findOrCreateAnchorProfile(serverUrl: string, token: string): Promise<PinchtabProfile>;
+  findRunningInstanceForProfile(
+    serverUrl: string,
+    profileId: string,
+  ): Promise<PinchtabInstance | null>;
   startHeadedInstance(serverUrl: string, profileId: string): Promise<PinchtabInstance | null>;
   waitForInstanceRunning(
     serverUrl: string,
@@ -80,11 +86,13 @@ export function createPinchtabClient(
       }
       const config = JSON.parse((await readFile(result.stdout.trim(), "utf8")).trim()) as {
         server?: { port?: string | number; bind?: string; token?: string };
+        multiInstance?: { strategy?: string };
       };
       const port = config.server?.port ?? "9867";
       const bind = config.server?.bind ?? "127.0.0.1";
-      const token = config.server?.token ?? "";
-      return { serverUrl: `http://${bind}:${port}`, token };
+      const token = process.env["PINCHTAB_TOKEN"] ?? config.server?.token ?? "";
+      const strategy = config.multiInstance?.strategy ?? "always-on";
+      return { serverUrl: `http://${bind}:${port}`, token, strategy };
     },
 
     async checkHealth(serverUrl) {
@@ -149,6 +157,14 @@ export function createPinchtabClient(
       }
       const parsed = (await response.json()) as { id: string; name: string };
       return { id: parsed.id, name: parsed.name };
+    },
+
+    async findRunningInstanceForProfile(serverUrl, profileId) {
+      return (
+        (await listInstances(executor, serverUrl)).find(
+          (instance) => instance.profileId === profileId && instance.status === "running",
+        ) ?? null
+      );
     },
 
     async startHeadedInstance(serverUrl, profileId) {
@@ -216,16 +232,30 @@ async function findInstance(
   serverUrl: string,
   instanceId: string,
 ): Promise<PinchtabInstance | null> {
+  return (
+    (await listInstances(executor, serverUrl)).find((entry) => entry.id === instanceId) ?? null
+  );
+}
+
+async function listInstances(
+  executor: PinchtabExecutor,
+  serverUrl: string,
+): Promise<PinchtabInstance[]> {
   const result = await executor(["--server", serverUrl, "instance", "list", "--json"]);
-  if (result.exitCode !== 0) return null;
+  if (result.exitCode !== 0) return [];
   try {
-    const parsed = parseJsonArray(result.stdout);
-    const instance = parsed.find((entry) => entry.id === instanceId);
-    return instance === undefined
-      ? null
-      : { id: String(instance.id), status: String(instance.status) };
+    return parseJsonArray(result.stdout).flatMap((entry) => {
+      if (typeof entry.id !== "string" || typeof entry.status !== "string") return [];
+      return [
+        {
+          id: entry.id,
+          status: entry.status,
+          ...(typeof entry.profileId === "string" ? { profileId: entry.profileId } : {}),
+        },
+      ];
+    });
   } catch {
-    return null;
+    return [];
   }
 }
 

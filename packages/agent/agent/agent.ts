@@ -18,6 +18,7 @@ export default defineAgent({
       "step.started": (_event, context) => {
         const modelId = resolveModelId(
           context.session.auth.current?.attributes[ANCHOR_MODEL_AUTH_ATTRIBUTE],
+          context.session.auth.initiator?.attributes[ANCHOR_MODEL_AUTH_ATTRIBUTE],
         );
 
         if (modelId === ANCHOR_MODEL_IDS.qwen) {

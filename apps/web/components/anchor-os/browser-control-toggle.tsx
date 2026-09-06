@@ -1,6 +1,7 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   disableBrowserControl,
   enableBrowserControl,
@@ -8,7 +9,6 @@ import {
   isBrowserControlOn,
 } from "@/lib/browser-control-client";
 import type { BrowserControlStatusView } from "@anchor-os/browser-control/types";
-import { Loader2Icon, RotateCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 type BrowserControlToggleProps = {
@@ -67,125 +67,61 @@ export function BrowserControlToggle({ onReadyChange }: BrowserControlToggleProp
       .finally(() => setPending(null));
   }, []);
 
+  const busy = pending !== null || view.status === "starting" || view.status === "stopping";
+  const tooltip = describeControl({
+    ready,
+    pending,
+    status: view.status,
+    error: view.error ?? readError ?? undefined,
+  });
+
   return (
-    <div className="border-t border-zinc-200 px-4 py-3" data-slot="browser-control">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-zinc-700">Browser control</span>
-        <ToggleAction
-          ready={ready}
-          pending={pending}
-          status={view.status}
-          readError={readError}
-          onEnable={enable}
-          onDisable={disable}
-          onRetryRead={read}
+    <div
+      className="flex items-center justify-between gap-3 border-t border-zinc-200 px-4 py-3"
+      data-slot="browser-control"
+    >
+      <span className="text-xs font-medium text-zinc-700">Browser control</span>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Switch
+              id="browser-control-switch"
+              checked={ready}
+              disabled={busy}
+              aria-label={ready ? "Turn browser control off" : "Turn browser control on"}
+              aria-invalid={view.status === "error" || readError !== null || undefined}
+              onCheckedChange={(checked) => {
+                if (checked) enable();
+                else disable();
+              }}
+            />
+          }
         />
-      </div>
-      <ToggleStatus status={view.status} pending={pending} error={view.error} />
-      {readError !== null ? (
-        <p
-          role="alert"
-          className="mt-1 text-xs text-red-600"
-          data-slot="browser-control-read-error"
-        >
-          Status unavailable: {readError}
-        </p>
-      ) : null}
+        <TooltipContent side="right">{tooltip}</TooltipContent>
+      </Tooltip>
+      <span className="sr-only" role="status" aria-live="polite">
+        {tooltip}
+      </span>
     </div>
   );
 }
 
-type ToggleActionProps = {
+type ControlDescriptionInput = {
   readonly ready: boolean;
   readonly pending: PendingAction | null;
   readonly status: BrowserControlStatusView["status"];
-  readonly readError: string | null;
-  readonly onEnable: () => void;
-  readonly onDisable: () => void;
-  readonly onRetryRead: () => void;
-};
-
-function ToggleAction({
-  ready,
-  pending,
-  status,
-  readError,
-  onEnable,
-  onDisable,
-  onRetryRead,
-}: ToggleActionProps) {
-  if (pending !== null || status === "starting" || status === "stopping") {
-    return (
-      <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-        <Loader2Icon className="size-3.5 animate-spin" aria-hidden />
-        {status === "starting" || pending === "enable" ? "Starting" : "Stopping"}
-      </span>
-    );
-  }
-  if (status === "error") {
-    return (
-      <Button type="button" variant="outline" size="xs" onClick={onEnable}>
-        <RotateCcwIcon className="size-3" />
-        Retry
-      </Button>
-    );
-  }
-  if (readError !== null && !ready) {
-    return (
-      <Button type="button" variant="outline" size="xs" onClick={onRetryRead}>
-        <RotateCcwIcon className="size-3" />
-        Retry
-      </Button>
-    );
-  }
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="xs"
-      aria-pressed={ready}
-      onClick={ready ? onDisable : onEnable}
-      aria-label={ready ? "Turn browser control off" : "Turn browser control on"}
-    >
-      {ready ? "Turn off" : "Turn on"}
-    </Button>
-  );
-}
-
-type ToggleStatusProps = {
-  readonly status: BrowserControlStatusView["status"];
-  readonly pending: PendingAction | null;
   readonly error?: string;
 };
 
-function ToggleStatus({ status, pending, error }: ToggleStatusProps) {
-  const label = describeStatus(status, pending, error);
-  return (
-    <p
-      className={`mt-1 text-xs ${status === "error" ? "text-red-600" : "text-zinc-500"}`}
-      data-slot={`browser-control-status-${status}`}
-    >
-      {label}
-    </p>
-  );
-}
-
-function describeStatus(
-  status: BrowserControlStatusView["status"],
-  pending: PendingAction | null,
-  error?: string,
-): string {
+function describeControl({ ready, pending, status, error }: ControlDescriptionInput): string {
   if (pending === "enable" || status === "starting") {
-    return "Starting the browser window…";
+    return "Starting browser control";
   }
   if (pending === "disable" || status === "stopping") {
-    return "Stopping browser control…";
+    return "Stopping browser control";
   }
-  if (status === "error") {
-    return error !== undefined && error !== "" ? error : "Browser control failed.";
+  if (error !== undefined && error !== "") {
+    return `${error} Toggle to retry.`;
   }
-  if (status === "on") {
-    return "On. Eve can drive the visible Chrome window.";
-  }
-  return "Off. Eve has no browser access.";
+  return ready ? "Turn off browser control" : "Turn on browser control";
 }

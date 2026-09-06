@@ -108,6 +108,121 @@ test("forwards a call to an allowlisted tool and preserves image content blocks"
   }
 });
 
+test("routes unscoped navigation through the existing visible tab", async () => {
+  const calls: Array<{ name: string; arguments?: Record<string, unknown> }> = [];
+  const upstream = makeUpstream({
+    callTool: async (params) => {
+      calls.push(params);
+      if (params.name === "pinchtab_list_tabs") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                tabs: [{ id: "tab_blank", url: "about:blank", title: "", type: "page" }],
+              }),
+            },
+          ],
+        };
+      }
+      return { content: [{ type: "text", text: "navigated" }] };
+    },
+  });
+  const bridge = await createBridge(upstream);
+  try {
+    const response = await bridge.handleRequest(
+      postRequest({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "pinchtab_navigate", arguments: { url: "https://example.com" } },
+      }),
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls, [
+      { name: "pinchtab_list_tabs", arguments: {} },
+      {
+        name: "pinchtab_navigate",
+        arguments: { url: "https://example.com", tabId: "tab_blank" },
+      },
+    ]);
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("re-resolves the visible tab when Chrome is reopened", async () => {
+  let tabs = [{ id: "tab_first", url: "about:blank" }];
+  const navigations: Array<Record<string, unknown> | undefined> = [];
+  const upstream = makeUpstream({
+    callTool: async (params) => {
+      if (params.name === "pinchtab_list_tabs") {
+        return { content: [{ type: "text", text: JSON.stringify({ tabs }) }] };
+      }
+      if (params.name === "pinchtab_navigate") navigations.push(params.arguments);
+      return { content: [{ type: "text", text: "ok" }] };
+    },
+  });
+  const bridge = await createBridge(upstream);
+  const navigate = (id: number, url: string) =>
+    bridge.handleRequest(
+      postRequest({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name: "pinchtab_navigate", arguments: { url } },
+      }),
+    );
+
+  try {
+    await navigate(1, "https://example.com/first");
+    tabs = [{ id: "tab_reopened", url: "about:blank" }];
+    await navigate(2, "https://example.com/second");
+
+    assert.deepEqual(navigations, [
+      { url: "https://example.com/first", tabId: "tab_first" },
+      { url: "https://example.com/second", tabId: "tab_reopened" },
+    ]);
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("preserves an explicit navigation tab", async () => {
+  const calls: Array<{ name: string; arguments?: Record<string, unknown> }> = [];
+  const bridge = await createBridge(
+    makeUpstream({
+      callTool: async (params) => {
+        calls.push(params);
+        return { content: [{ type: "text", text: "ok" }] };
+      },
+    }),
+  );
+  try {
+    await bridge.handleRequest(
+      postRequest({
+        jsonrpc: "2.0",
+        id: 4,
+        method: "tools/call",
+        params: {
+          name: "pinchtab_navigate",
+          arguments: { url: "https://example.com", tabId: "tab_selected" },
+        },
+      }),
+    );
+
+    assert.deepEqual(calls, [
+      {
+        name: "pinchtab_navigate",
+        arguments: { url: "https://example.com", tabId: "tab_selected" },
+      },
+    ]);
+  } finally {
+    await bridge.close();
+  }
+});
+
 test("rejects a call to a blocked tool without forwarding it", async () => {
   let forwarded = false;
   const upstream = makeUpstream({
@@ -135,22 +250,37 @@ test("rejects a call to a blocked tool without forwarding it", async () => {
   }
 });
 
-test("a second chat with a different session id gets a busy error", async () => {
-  const bridge = await createBridge(makeUpstream());
+test("a second chat is busy only while another chat has an active browser call", async () => {
+  let finishFirst: (() => void) | undefined;
+  const firstBlocked = new Promise<void>((resolve) => {
+    finishFirst = resolve;
+  });
+  let firstStarted: (() => void) | undefined;
+  const firstStartedPromise = new Promise<void>((resolve) => {
+    firstStarted = resolve;
+  });
+  const bridge = await createBridge(
+    makeUpstream({
+      callTool: async () => {
+        firstStarted?.();
+        await firstBlocked;
+        return { content: [{ type: "text", text: "done" }] };
+      },
+    }),
+  );
   try {
-    const first = await bridge.handleRequest(
+    const firstPromise = bridge.handleRequest(
       postRequest(
         {
           jsonrpc: "2.0",
           id: 4,
           method: "tools/call",
-          params: { name: "pinchtab_navigate", arguments: { url: "https://example.com" } },
+          params: { name: "pinchtab_snapshot", arguments: {} },
         },
         { "x-eve-session-id": "chat-a" },
       ),
     );
-    const firstBody = (await first.json()) as { result: { isError?: boolean } };
-    assert.notEqual(firstBody.result.isError, true);
+    await firstStartedPromise;
 
     const second = await bridge.handleRequest(
       postRequest(
@@ -168,7 +298,27 @@ test("a second chat with a different session id gets a busy error", async () => 
     };
     assert.equal(secondBody.result.isError, true);
     assert.ok(secondBody.result.content[0].text.includes("busy"));
+
+    finishFirst?.();
+    const first = await firstPromise;
+    const firstBody = (await first.json()) as { result: { isError?: boolean } };
+    assert.notEqual(firstBody.result.isError, true);
+
+    const after = await bridge.handleRequest(
+      postRequest(
+        {
+          jsonrpc: "2.0",
+          id: 6,
+          method: "tools/call",
+          params: { name: "pinchtab_snapshot", arguments: {} },
+        },
+        { "x-eve-session-id": "chat-b" },
+      ),
+    );
+    const afterBody = (await after.json()) as { result: { isError?: boolean } };
+    assert.notEqual(afterBody.result.isError, true);
   } finally {
+    finishFirst?.();
     await bridge.close();
   }
 });

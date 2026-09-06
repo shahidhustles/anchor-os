@@ -15,16 +15,21 @@ export default eveChannel({
     const auth = defaultEveAuth(context);
     if (auth === null) return { auth };
 
-    const modelId = resolveModelId(context.eve.request.headers.get(ANCHOR_MODEL_HEADER));
+    const modelHeader = context.eve.request.headers.get(ANCHOR_MODEL_HEADER);
+    const browserControlHeader = context.eve.request.headers.get(BROWSER_CONTROL_HEADER);
     return {
       auth: {
         ...auth,
         attributes: {
           ...auth.attributes,
-          [ANCHOR_MODEL_AUTH_ATTRIBUTE]: modelId,
-          [BROWSER_CONTROL_AUTH_ATTRIBUTE]: parseBrowserControlHeader(
-            context.eve.request.headers.get(BROWSER_CONTROL_HEADER),
-          ),
+          ...(modelHeader === null
+            ? {}
+            : { [ANCHOR_MODEL_AUTH_ATTRIBUTE]: resolveModelId(modelHeader) }),
+          ...(browserControlHeader === null
+            ? {}
+            : {
+                [BROWSER_CONTROL_AUTH_ATTRIBUTE]: parseBrowserControlHeader(browserControlHeader),
+              }),
         },
       },
     };

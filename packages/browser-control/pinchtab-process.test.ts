@@ -104,6 +104,25 @@ test("waitForInstanceRunning gives up on stopped or error states", async () => {
   );
 });
 
+test("findRunningInstanceForProfile returns only a running instance for the profile", async () => {
+  const client = createPinchtabClient(
+    execWith(() =>
+      ok(
+        JSON.stringify([
+          { id: "inst_stopped", profileId: "prof_anchor", status: "stopped" },
+          { id: "inst_other", profileId: "prof_other", status: "running" },
+          { id: "inst_anchor", profileId: "prof_anchor", status: "running" },
+        ]),
+      ),
+    ),
+  );
+
+  assert.deepEqual(
+    await client.findRunningInstanceForProfile("http://127.0.0.1:9867", "prof_anchor"),
+    { id: "inst_anchor", profileId: "prof_anchor", status: "running" },
+  );
+});
+
 test("findOrCreateAnchorProfile reuses an existing profile", async () => {
   let fetched = false;
   const client = createPinchtabClient(
@@ -148,6 +167,7 @@ test("readConfig reads the port, bind, and token from the config file", async ()
     configPath,
     JSON.stringify({
       server: { port: "9867", bind: "127.0.0.1", token: "secret-token" },
+      multiInstance: { strategy: "explicit" },
     }),
   );
   const client = createPinchtabClient(
@@ -160,5 +180,6 @@ test("readConfig reads the port, bind, and token from the config file", async ()
   assert.deepEqual(config, {
     serverUrl: "http://127.0.0.1:9867",
     token: "secret-token",
+    strategy: "explicit",
   });
 });

@@ -3,13 +3,18 @@ import { defineDynamic, defineMcpClientConnection } from "eve/connections";
 import {
   BROWSER_CONTROL_AUTH_ATTRIBUTE,
   fetchBrowserControlStatus,
+  resolveBrowserControlSetting,
   resolveBrowserConnection,
 } from "../lib/browser-control";
 
 export default defineDynamic({
   events: {
     "turn.started": async (_event, ctx) => {
-      if (ctx.session.auth.current?.attributes[BROWSER_CONTROL_AUTH_ATTRIBUTE] !== "on") {
+      const browserControl = resolveBrowserControlSetting(
+        ctx.session.auth.current?.attributes[BROWSER_CONTROL_AUTH_ATTRIBUTE],
+        ctx.session.auth.initiator?.attributes[BROWSER_CONTROL_AUTH_ATTRIBUTE],
+      );
+      if (browserControl !== "on") {
         return null;
       }
 
