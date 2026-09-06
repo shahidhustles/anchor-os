@@ -75,6 +75,7 @@
       "dependencies": {
         "@ai-sdk/openai": "4.0.59",
         "@ai-sdk/openai-compatible": "3.0.44",
+        "@anchor-os/browser-control": "workspace:*",
         "ai": "7.0.93",
         "eve": "0.52.1",
         "microsandbox": "0.6.17",

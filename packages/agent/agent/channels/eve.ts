@@ -2,6 +2,11 @@ import { localDev, placeholderAuth, vercelOidc } from "eve/channels/auth";
 import { defaultEveAuth, eveChannel } from "eve/channels/eve";
 
 import { ANCHOR_MODEL_AUTH_ATTRIBUTE, ANCHOR_MODEL_HEADER } from "../../model-catalog";
+import {
+  BROWSER_CONTROL_AUTH_ATTRIBUTE,
+  BROWSER_CONTROL_HEADER,
+  parseBrowserControlHeader,
+} from "../lib/browser-control";
 import { resolveModelId } from "../lib/model-selection";
 
 export default eveChannel({
@@ -17,6 +22,9 @@ export default eveChannel({
         attributes: {
           ...auth.attributes,
           [ANCHOR_MODEL_AUTH_ATTRIBUTE]: modelId,
+          [BROWSER_CONTROL_AUTH_ATTRIBUTE]: parseBrowserControlHeader(
+            context.eve.request.headers.get(BROWSER_CONTROL_HEADER),
+          ),
         },
       },
     };
