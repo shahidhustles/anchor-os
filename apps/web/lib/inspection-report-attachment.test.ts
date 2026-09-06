@@ -110,14 +110,19 @@ test("validates the final Eve message attachment boundary", () => {
 test("maps tool snapshots to truthful report status", () => {
   assert.deepEqual(
     inspectionReportToolView({ phase: "reading", totalPages: 3 }, { type: "running" }),
-    { tone: "active", label: "Reading report · 3 pages", detail: null },
+    { tone: "active", label: "Reading report · 3 pages", detail: null, retryable: false },
   );
   assert.deepEqual(
     inspectionReportToolView(
       { status: "complete", totalPages: 3, imageCount: 1 },
       { type: "complete" },
     ),
-    { tone: "complete", label: "Read 3 of 3 pages", detail: "1 extracted image" },
+    {
+      tone: "complete",
+      label: "Read 3 of 3 pages",
+      detail: "1 extracted image",
+      retryable: false,
+    },
   );
   assert.deepEqual(
     inspectionReportToolView(undefined, { type: "incomplete", reason: "cancelled" }),
@@ -125,13 +130,54 @@ test("maps tool snapshots to truthful report status", () => {
       tone: "cancelled",
       label: "Stopped reading report",
       detail: null,
+      retryable: false,
     },
   );
   assert.deepEqual(inspectionReportToolView(undefined, { type: "incomplete", reason: "error" }), {
     tone: "error",
     label: "Could not read report",
     detail: null,
+    retryable: false,
   });
+});
+
+test("maps failed tool results to a retryable or permanent error", () => {
+  assert.deepEqual(
+    inspectionReportToolView(
+      { status: "failed", retryable: true, error: "Paddle OCR service returned HTTP 502." },
+      { type: "complete" },
+    ),
+    {
+      tone: "error",
+      label: "Could not read report",
+      detail: "Paddle OCR service returned HTTP 502.",
+      retryable: true,
+    },
+  );
+  assert.deepEqual(
+    inspectionReportToolView(
+      { status: "failed", retryable: false, error: "The staged file is not a PDF." },
+      { type: "complete" },
+    ),
+    {
+      tone: "error",
+      label: "Could not read report",
+      detail: "The staged file is not a PDF.",
+      retryable: false,
+    },
+  );
+  assert.deepEqual(
+    inspectionReportToolView(
+      { error: "backend rejected the call" },
+      { type: "incomplete", reason: "error" },
+    ),
+    {
+      tone: "error",
+      label: "Could not read report",
+      detail: "backend rejected the call",
+      retryable: false,
+    },
+  );
 });
 
 test("registers the OCR tool renderer as a standalone backend tool", () => {

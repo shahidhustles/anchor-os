@@ -10,7 +10,9 @@ A PDF inspection report arrives as an opaque workspace-file reference under `/wo
 
 Before reading, analyzing, summarizing, or answering from an attached PDF, call `parse_inspection_report` with the exact staged workspace path. Wait for it to finish. Then inspect the returned `reportPath`, `layoutPath`, and `manifestPath` with `read_file` or `bash`. Do not use the original PDF as evidence and do not answer from its filename alone.
 
-If parsing fails or is cancelled, stop report analysis and explain that the report was not read.
+If parsing fails, stop report analysis and explain that the report was not read. A failed parse returns `status: "failed"` with a short `error` and a `retryable` flag; never present failed-request content as if the report had been read. When `retryable` is true the staged PDF is intact, so the user can retry it from the tool card or ask you to try again, in which case re-call `parse_inspection_report` with the same staged path. When `retryable` is false, do not repeat the call.
+
+If parsing is cancelled, stop: do not re-call the tool and do not start reasoning about the report.
 
 ## Documents and spreadsheets
 

@@ -10,6 +10,26 @@ export const INSPECTION_REPORT_SCHEMA_VERSION = 1;
 export const INSPECTION_REPORT_MAX_PAGES = 20;
 export const INSPECTION_REPORT_ROOT = "inspection-reports";
 
+export class InspectionReportCancelledError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InspectionReportCancelledError";
+  }
+}
+
+export class InspectionReportRetryableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InspectionReportRetryableError";
+  }
+}
+
+export type InspectionReportFailure = {
+  readonly status: "failed";
+  readonly retryable: boolean;
+  readonly error: string;
+};
+
 export type InspectionReportSandbox = Pick<
   SandboxSession,
   | "run"
@@ -246,11 +266,6 @@ export async function* parseInspectionReport(input: {
   }
 
   await sandbox.removePath({ path: reportDir, force: true, recursive: true, abortSignal: signal });
-  await sandbox.writeBinaryFile({
-    path: `${reportDir}/original.pdf`,
-    content: bytes,
-    abortSignal: signal,
-  });
 
   const pdfInfo = await sandbox.run({
     command: `pdfinfo ${shellQuote(sandbox.resolvePath(stagedPath))}`,
@@ -275,16 +290,31 @@ export async function* parseInspectionReport(input: {
 
   const requestedAt = new Date().toISOString();
   const startedAt = Date.now();
-  const paddle = await parsePaddleOcrPdf(bytes, input.paddleOptions);
+  let paddle: PaddleOcrResult;
+  try {
+    paddle = await parsePaddleOcrPdf(bytes, input.paddleOptions);
+  } catch (error) {
+    if (signal?.aborted) {
+      throw new InspectionReportCancelledError(
+        error instanceof Error ? error.message : "Paddle OCR request was cancelled.",
+      );
+    }
+    throw new InspectionReportRetryableError(error instanceof Error ? error.message : String(error));
+  }
   const durationMs = Date.now() - startedAt;
 
+  if (signal?.aborted) {
+    throw new InspectionReportCancelledError(
+      "Paddle OCR request was cancelled after completion; ignoring the response.",
+    );
+  }
   if (paddle.dataType !== "pdf") {
-    throw new Error(
+    throw new InspectionReportRetryableError(
       `Paddle OCR returned dataInfo.type "${paddle.dataType}" instead of "pdf" (logId ${paddle.logId}).`,
     );
   }
   if (paddle.numPages !== localPages) {
-    throw new Error(
+    throw new InspectionReportRetryableError(
       `Paddle OCR page count ${paddle.numPages} disagrees with the locally counted ${localPages} pages (logId ${paddle.logId}).`,
     );
   }
@@ -301,28 +331,52 @@ export async function* parseInspectionReport(input: {
 
   yield { phase: "saving", totalPages: paddle.numPages, imageCount: assembled.imageFiles.length };
 
-  await sandbox.writeTextFile({
-    path: `${reportDir}/report.md`,
-    content: assembled.reportMarkdown,
-    abortSignal: signal,
-  });
-  await sandbox.writeTextFile({
-    path: `${reportDir}/layout.json`,
-    content: assembled.layoutJson,
-    abortSignal: signal,
-  });
-  for (const imageFile of assembled.imageFiles) {
+  const stagingDir = `${INSPECTION_REPORT_ROOT}/.staging-${reportId}`;
+  await sandbox.removePath({ path: stagingDir, force: true, recursive: true, abortSignal: signal });
+  try {
     await sandbox.writeBinaryFile({
-      path: `${reportDir}/${imageFile.path}`,
-      content: imageFile.bytes,
+      path: `${stagingDir}/original.pdf`,
+      content: bytes,
       abortSignal: signal,
     });
+    await sandbox.writeTextFile({
+      path: `${stagingDir}/report.md`,
+      content: assembled.reportMarkdown,
+      abortSignal: signal,
+    });
+    await sandbox.writeTextFile({
+      path: `${stagingDir}/layout.json`,
+      content: assembled.layoutJson,
+      abortSignal: signal,
+    });
+    for (const imageFile of assembled.imageFiles) {
+      await sandbox.writeBinaryFile({
+        path: `${stagingDir}/${imageFile.path}`,
+        content: imageFile.bytes,
+        abortSignal: signal,
+      });
+    }
+    await sandbox.writeTextFile({
+      path: `${stagingDir}/manifest.json`,
+      content: `${JSON.stringify(assembled.manifest, null, 2)}\n`,
+      abortSignal: signal,
+    });
+
+    const publish = await sandbox.run({
+      command: `mv ${shellQuote(sandbox.resolvePath(stagingDir))} ${shellQuote(sandbox.resolvePath(reportDir))}`,
+      abortSignal: signal,
+    });
+    if (publish.exitCode !== 0) {
+      throw new InspectionReportRetryableError(
+        `Publishing the inspection report failed: ${firstLine(publish.stderr) || `exit code ${publish.exitCode}`}`,
+      );
+    }
+  } catch (error) {
+    await sandbox
+      .removePath({ path: stagingDir, force: true, recursive: true })
+      .catch(() => undefined);
+    throw error;
   }
-  await sandbox.writeTextFile({
-    path: `${reportDir}/manifest.json`,
-    content: `${JSON.stringify(assembled.manifest, null, 2)}\n`,
-    abortSignal: signal,
-  });
 
   yield buildResult({ reportId, sandbox, manifest: assembled.manifest, cached: false });
 }

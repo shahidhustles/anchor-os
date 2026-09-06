@@ -9,6 +9,8 @@ import {
   assembleInspectionReport,
   deriveReportId,
   INSPECTION_REPORT_MAX_PAGES,
+  InspectionReportCancelledError,
+  InspectionReportRetryableError,
   parseInspectionReport,
   parsePdfInfoPages,
   rewriteMarkdownImageReferences,
@@ -35,6 +37,7 @@ type FakeSandboxOptions = {
   readonly pdfinfoPages?: number;
   readonly pdfinfoExitCode?: number;
   readonly pdfinfoStderr?: string;
+  readonly mvExitCode?: number;
 };
 
 function createFakeSandbox(
@@ -55,6 +58,22 @@ function createFakeSandbox(
           stdout: `Title: test\nPages:         ${options.pdfinfoPages ?? 2}\nEncrypted: no\n`,
           stderr: options.pdfinfoStderr ?? "",
         };
+      }
+      const move = command.match(/^mv '([^']*)' '([^']*)'$/);
+      if (move !== null) {
+        if (options.mvExitCode === 1) {
+          return { exitCode: 1, stdout: "", stderr: "mv: cannot move" };
+        }
+        const [, source, target] = move;
+        const sourceKey = source.replace(/^\/workspace\//, "");
+        const targetKey = target.replace(/^\/workspace\//, "");
+        for (const key of [...files.keys()]) {
+          if (key === sourceKey || key.startsWith(`${sourceKey}/`)) {
+            files.set(targetKey + key.slice(sourceKey.length), files.get(key)!);
+            files.delete(key);
+          }
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
       }
       throw new Error(`unexpected command: ${command}`);
     },
@@ -171,11 +190,15 @@ test("parses one staged PDF into a complete report directory", async () => {
   expect(result.manifestPath).toBe(`/workspace/${reportDir}/manifest.json`);
   expect(result.imagePaths).toEqual([`/workspace/${reportDir}/images/page-001-image-001.jpg`]);
 
-  expect(commands).toHaveLength(1);
+  expect(commands).toHaveLength(2);
   expect(commands[0]).toContain("pdfinfo '/workspace/attachments/abc123/pump-inspection.pdf'");
+  expect(commands[1]).toMatch(
+    /^mv '\/workspace\/inspection-reports\/\.staging-[\w-]+' '\/workspace\/inspection-reports\/[\w-]+'$/,
+  );
   expect(paddleRequests).toBe(1);
 
   expect(files.get(`${reportDir}/original.pdf`)).toEqual(PDF_BYTES);
+  expect([...files.keys()].some((key) => key.includes(".staging-"))).toBe(false);
   const report = storedText(files, `${reportDir}/report.md`);
   expect(report).toContain("<!-- page 1 -->");
   expect(report).toContain("<!-- page 2 -->");
@@ -246,7 +269,7 @@ test("reuses the completed directory for the same source bytes", async () => {
   expect(result.totalPages).toBe(2);
   expect(result.imageCount).toBe(1);
   expect(paddleRequests).toBe(1);
-  expect(commands).toHaveLength(1);
+  expect(commands).toHaveLength(2);
 });
 
 test("refuses to overwrite a directory holding different source bytes", async () => {
@@ -273,22 +296,20 @@ test("refuses to overwrite a directory holding different source bytes", async ()
   expect(files.get(manifestPath)).toBe(existingManifest);
 });
 
-test("a page-count mismatch publishes no complete report artifacts", async () => {
+test("a page-count mismatch fails retryably and publishes no report artifacts", async () => {
   process.env.PADDLE_OCR_BASE_URL = "http://127.0.0.1:8080";
   const files = stagedFiles();
   const { sandbox } = createFakeSandbox(files, { pdfinfoPages: 3 });
   globalThis.fetch = (async () => jsonResponse(paddleSuccessPayload())) as typeof fetch;
 
-  await expect(drain(parseInspectionReport({ sandbox, stagedPath: STAGED_PATH }))).rejects.toThrow(
-    /disagrees with the locally counted 3 pages/,
+  const error = await drain(parseInspectionReport({ sandbox, stagedPath: STAGED_PATH })).catch(
+    (caught: unknown) => caught,
   );
+  expect(error).toBeInstanceOf(InspectionReportRetryableError);
+  expect(error).toMatchObject({ message: expect.stringMatching(/disagrees with the locally counted 3 pages/) });
 
-  const reportId = deriveReportId("pump-inspection.pdf", PDF_BYTES);
-  const reportDir = `inspection-reports/${reportId}`;
-  expect(files.get(`${reportDir}/original.pdf`)).toEqual(PDF_BYTES);
-  expect(files.has(`${reportDir}/report.md`)).toBe(false);
-  expect(files.has(`${reportDir}/layout.json`)).toBe(false);
-  expect(files.has(`${reportDir}/manifest.json`)).toBe(false);
+  expect([...files.keys()].filter((key) => key.startsWith("inspection-reports/"))).toEqual([]);
+  expect(files.get(STAGED_PATH)).toEqual(PDF_BYTES);
 });
 
 test("rejects files without a PDF signature", async () => {
@@ -363,16 +384,19 @@ test("rejects a missing staged file", async () => {
   );
 });
 
-test("rejects responses whose dataInfo.type is not pdf", async () => {
+test("rejects responses whose dataInfo.type is not pdf as retryable", async () => {
   process.env.PADDLE_OCR_BASE_URL = "http://127.0.0.1:8080";
-  const { sandbox } = createFakeSandbox(stagedFiles());
+  const files = stagedFiles();
+  const { sandbox } = createFakeSandbox(files);
   const payload = paddleSuccessPayload();
   ((payload.result as Record<string, unknown>).dataInfo as Record<string, unknown>).type = "image";
   globalThis.fetch = (async () => jsonResponse(payload)) as typeof fetch;
 
-  await expect(drain(parseInspectionReport({ sandbox, stagedPath: STAGED_PATH }))).rejects.toThrow(
-    /dataInfo\.type/,
+  const error = await drain(parseInspectionReport({ sandbox, stagedPath: STAGED_PATH })).catch(
+    (caught: unknown) => caught,
   );
+  expect(error).toBeInstanceOf(InspectionReportRetryableError);
+  expect(error).toMatchObject({ message: expect.stringMatching(/dataInfo\.type/) });
 });
 
 test("produces no partial report when the request is cancelled", async () => {
@@ -385,18 +409,95 @@ test("produces no partial report when the request is cancelled", async () => {
     throw new DOMException("The operation was aborted.", "AbortError");
   }) as typeof fetch;
 
-  await expect(
-    drain(
-      parseInspectionReport({
-        sandbox,
-        stagedPath: STAGED_PATH,
-        paddleOptions: { signal: controller.signal },
-      }),
-    ),
-  ).rejects.toThrow(/cancelled/);
+  const error = await drain(
+    parseInspectionReport({
+      sandbox,
+      stagedPath: STAGED_PATH,
+      paddleOptions: { signal: controller.signal },
+    }),
+  ).catch((caught: unknown) => caught);
+  expect(error).toBeInstanceOf(InspectionReportCancelledError);
+  expect(error).toMatchObject({ message: expect.stringMatching(/cancelled/) });
+
+  expect([...files.keys()].filter((key) => key.startsWith("inspection-reports/"))).toEqual([]);
+  expect(files.get(STAGED_PATH)).toEqual(PDF_BYTES);
+});
+
+test("a forced request failure is retryable, preserves the staged PDF, then retry completes", async () => {
+  process.env.PADDLE_OCR_BASE_URL = "http://127.0.0.1:8080";
+  const files = stagedFiles();
+  const { sandbox, commands } = createFakeSandbox(files);
+  let paddleRequests = 0;
+  globalThis.fetch = (async () => {
+    paddleRequests += 1;
+    if (paddleRequests === 1) {
+      return new Response(
+        JSON.stringify({ logId: "log-err", errorCode: 500, errorMsg: "Service busy" }),
+        { status: 500, headers: { "content-type": "application/json" } },
+      );
+    }
+    return jsonResponse(paddleSuccessPayload());
+  }) as typeof fetch;
+
+  const failure = await drain(parseInspectionReport({ sandbox, stagedPath: STAGED_PATH })).catch(
+    (caught: unknown) => caught,
+  );
+  expect(failure).toBeInstanceOf(InspectionReportRetryableError);
+  expect(failure).toMatchObject({ message: expect.stringMatching(/HTTP 500/) });
 
   const reportId = deriveReportId("pump-inspection.pdf", PDF_BYTES);
-  expect(files.has(`inspection-reports/${reportId}/manifest.json`)).toBe(false);
+  expect([...files.keys()].filter((key) => key.startsWith("inspection-reports/"))).toEqual([]);
+  expect(files.get(STAGED_PATH)).toEqual(PDF_BYTES);
+
+  const yielded = await drain(parseInspectionReport({ sandbox, stagedPath: STAGED_PATH }));
+
+  const result = yielded.at(-1) as InspectionReportResult;
+  expect(result.status).toBe("complete");
+  expect(result.cached).toBe(false);
+  expect(result.logId).toBe("log-1");
+  expect(paddleRequests).toBe(2);
+  expect(files.get(`inspection-reports/${reportId}/manifest.json`)).toBeDefined();
+  expect(commands.filter((command) => command.startsWith("mv "))).toHaveLength(1);
+});
+
+test("a failed publish is retryable and leaves the staged report unpublished", async () => {
+  process.env.PADDLE_OCR_BASE_URL = "http://127.0.0.1:8080";
+  const files = stagedFiles();
+  const { sandbox } = createFakeSandbox(files, { mvExitCode: 1 });
+  globalThis.fetch = (async () => jsonResponse(paddleSuccessPayload())) as typeof fetch;
+
+  const failure = await drain(parseInspectionReport({ sandbox, stagedPath: STAGED_PATH })).catch(
+    (caught: unknown) => caught,
+  );
+  expect(failure).toBeInstanceOf(InspectionReportRetryableError);
+  expect(failure).toMatchObject({ message: expect.stringMatching(/Publishing the inspection report failed/) });
+
+  const reportId = deriveReportId("pump-inspection.pdf", PDF_BYTES);
+  expect(files.get(`inspection-reports/${reportId}/manifest.json`)).toBeUndefined();
+  expect([...files.keys()].filter((key) => key.includes(".staging-"))).toEqual([]);
+  expect(files.get(STAGED_PATH)).toEqual(PDF_BYTES);
+});
+
+test("an invalid decoded image is a retryable failure that publishes nothing", async () => {
+  process.env.PADDLE_OCR_BASE_URL = "http://127.0.0.1:8080";
+  const files = stagedFiles();
+  const { sandbox } = createFakeSandbox(files);
+  const payload = paddleSuccessPayload();
+  const markdown = ((payload.result as Record<string, unknown>).layoutParsingResults as Record<
+    string,
+    unknown
+  >[])[0] as { markdown: { images: Record<string, string> } };
+  markdown.markdown.images = { "imgs/img_001.jpg": "not-base64" };
+  globalThis.fetch = (async () => jsonResponse(payload)) as typeof fetch;
+
+  const failure = await drain(parseInspectionReport({ sandbox, stagedPath: STAGED_PATH })).catch(
+    (caught: unknown) => caught,
+  );
+  expect(failure).toBeInstanceOf(InspectionReportRetryableError);
+  expect(failure).toMatchObject({ message: expect.stringMatching(/not valid Base64/) });
+
+  expect([...files.keys()].filter((key) => key.startsWith("inspection-reports/"))).toEqual([]);
+  expect(files.get(STAGED_PATH)).toEqual(PDF_BYTES);
 });
 
 test("slugifyFilename produces safe slugs", () => {

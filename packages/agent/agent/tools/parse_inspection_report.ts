@@ -1,7 +1,11 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { parseInspectionReport } from "../lib/inspection-report";
+import {
+  type InspectionReportFailure,
+  InspectionReportRetryableError,
+  parseInspectionReport,
+} from "../lib/inspection-report";
 
 export default defineTool({
   description:
@@ -14,10 +18,19 @@ export default defineTool({
   }),
   async *execute({ path }, ctx) {
     const sandbox = await ctx.getSandbox();
-    yield* parseInspectionReport({
-      sandbox,
-      stagedPath: path,
-      paddleOptions: { signal: ctx.abortSignal },
-    });
+    try {
+      yield* parseInspectionReport({
+        sandbox,
+        stagedPath: path,
+        paddleOptions: { signal: ctx.abortSignal },
+      });
+    } catch (error) {
+      if (ctx.abortSignal.aborted) throw error;
+      yield {
+        status: "failed",
+        retryable: error instanceof InspectionReportRetryableError,
+        error: error instanceof Error ? error.message : String(error),
+      } satisfies InspectionReportFailure;
+    }
   },
 });

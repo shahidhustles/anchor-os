@@ -110,6 +110,7 @@ export type InspectionReportToolView = {
   readonly tone: "active" | "complete" | "cancelled" | "error";
   readonly label: string;
   readonly detail: string | null;
+  readonly retryable: boolean;
 };
 
 export function inspectionReportToolView(
@@ -118,9 +119,23 @@ export function inspectionReportToolView(
 ): InspectionReportToolView {
   if (status.type === "incomplete") {
     if (status.reason === "cancelled") {
-      return { tone: "cancelled", label: "Stopped reading report", detail: null };
+      return { tone: "cancelled", label: "Stopped reading report", detail: null, retryable: false };
     }
-    return { tone: "error", label: "Could not read report", detail: null };
+    return {
+      tone: "error",
+      label: "Could not read report",
+      detail: errorMessage(result),
+      retryable: false,
+    };
+  }
+
+  if (isRecord(result) && result.status === "failed" && typeof result.error === "string") {
+    return {
+      tone: "error",
+      label: "Could not read report",
+      detail: result.error,
+      retryable: result.retryable === true,
+    };
   }
 
   if (isRecord(result) && result.status === "complete" && isPositiveInteger(result.totalPages)) {
@@ -130,6 +145,7 @@ export function inspectionReportToolView(
       detail: isNonNegativeInteger(result.imageCount)
         ? `${result.imageCount} extracted ${result.imageCount === 1 ? "image" : "images"}`
         : null,
+      retryable: false,
     };
   }
 
@@ -139,6 +155,7 @@ export function inspectionReportToolView(
         tone: "active",
         label: "Checking report",
         detail: typeof result.filename === "string" ? result.filename : null,
+        retryable: false,
       };
     }
     if (result.phase === "reading" && isPositiveInteger(result.totalPages)) {
@@ -146,6 +163,7 @@ export function inspectionReportToolView(
         tone: "active",
         label: `Reading report · ${result.totalPages} ${result.totalPages === 1 ? "page" : "pages"}`,
         detail: null,
+        retryable: false,
       };
     }
     if (result.phase === "saving" && isPositiveInteger(result.totalPages)) {
@@ -155,11 +173,19 @@ export function inspectionReportToolView(
         detail: isNonNegativeInteger(result.imageCount)
           ? `${result.totalPages} pages · ${result.imageCount} ${result.imageCount === 1 ? "image" : "images"}`
           : `${result.totalPages} pages`,
+        retryable: false,
       };
     }
   }
 
-  return { tone: "active", label: "Preparing report", detail: null };
+  return { tone: "active", label: "Preparing report", detail: null, retryable: false };
+}
+
+function errorMessage(result: unknown): string | null {
+  if (isRecord(result) && typeof result.error === "string" && result.error !== "") {
+    return result.error;
+  }
+  return null;
 }
 
 async function fileToOpaqueDataUrl(file: File): Promise<string> {
