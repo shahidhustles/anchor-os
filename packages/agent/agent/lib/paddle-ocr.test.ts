@@ -104,6 +104,7 @@ test("posts the whole PDF with fileType 0 and returns ordered typed pages", asyn
   });
 
   expect(result.logId).toBe("log-1");
+  expect(result.dataType).toBe("pdf");
   expect(result.numPages).toBe(2);
   expect(result.pages.map((page) => page.pageNumber)).toEqual([1, 2]);
   expect(result.pages[0]!.markdownText).toBe("# Page one\n\n![photo](imgs/img_001.jpg)");

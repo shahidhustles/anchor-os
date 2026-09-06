@@ -19,6 +19,7 @@ export type PaddleOcrPage = {
 
 export type PaddleOcrResult = {
   readonly logId: string;
+  readonly dataType: string;
   readonly numPages: number;
   readonly pages: readonly PaddleOcrPage[];
 };
@@ -152,6 +153,9 @@ function parseSuccessEnvelope(bodyText: string, maxOutputBytes: number): PaddleO
   if (!isRecord(dataInfo) || !isPositiveInteger(dataInfo.numPages) || !Array.isArray(dataInfo.pages)) {
     throw new Error(`Paddle OCR response is missing dataInfo.numPages or dataInfo.pages (logId ${logId}).`);
   }
+  if (typeof dataInfo.type !== "string") {
+    throw new Error(`Paddle OCR response is missing dataInfo.type (logId ${logId}).`);
+  }
   if (!Array.isArray(layoutParsingResults)) {
     throw new Error(`Paddle OCR response is missing layoutParsingResults (logId ${logId}).`);
   }
@@ -176,7 +180,7 @@ function parseSuccessEnvelope(bodyText: string, maxOutputBytes: number): PaddleO
     pages.push(page);
   }
 
-  return { logId, numPages: dataInfo.numPages, pages };
+  return { logId, dataType: dataInfo.type, numPages: dataInfo.numPages, pages };
 }
 
 function parsePage(entry: unknown, index: number, logId: string): PaddleOcrPage {
