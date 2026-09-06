@@ -35,6 +35,37 @@ test("explains that chats survive reloads", () => {
   assert.doesNotMatch(html, /Chats reset when this app reloads/);
 });
 
+test("renders the browser control switch off on the server", () => {
+  const html = renderToString(<Home />);
+
+  assert.match(html, /data-slot="browser-control"/);
+  assert.match(html, /data-slot="browser-control-status-off"/);
+  assert.match(html, /aria-pressed="false"/);
+  assert.doesNotMatch(html, /aria-pressed="true"/);
+  assert.doesNotMatch(html, /data-slot="browser-control-status-on"/);
+});
+
+test("mounts the browser control above the chat persistence note", () => {
+  const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+  const toggleIndex = source.indexOf("<BrowserControlToggle");
+  const noteIndex = source.indexOf("Chats are saved and return after reload.");
+
+  assert.notEqual(toggleIndex, -1);
+  assert.notEqual(noteIndex, -1);
+  assert.ok(toggleIndex < noteIndex);
+});
+
+test("sends the Eve browser header only while browser control is ready", () => {
+  const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /browserReadyRef\.current = browserReady/);
+  assert.match(
+    source,
+    /\[BROWSER_CONTROL_HEADER\]: browserControlHeaderValue\(browserReadyRef\.current\)/,
+  );
+  assert.match(source, /<BrowserControlToggle onReadyChange=\{setBrowserReady\} \/>/);
+});
+
 test("keeps saved chat history visible while a workspace cannot resume", () => {
   const source = readFileSync(new URL("./page.tsx", import.meta.url), "utf8");
 

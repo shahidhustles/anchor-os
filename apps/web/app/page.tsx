@@ -4,6 +4,7 @@ import { askQuestionToolkit } from "@/components/anchor-os/ask-question-toolkit"
 import { ArtifactWorkspace } from "@/components/anchor-os/artifact-panel";
 import { ArtifactsProvider } from "@/components/anchor-os/artifacts-context";
 import { inspectionReportToolkit } from "@/components/anchor-os/inspection-report-toolkit";
+import { BrowserControlToggle } from "@/components/anchor-os/browser-control-toggle";
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -22,6 +23,7 @@ import {
   assertInspectionReportAttachmentMessage,
   InspectionReportAttachmentAdapter,
 } from "@/lib/inspection-report-attachment";
+import { BROWSER_CONTROL_HEADER, browserControlHeaderValue } from "@/lib/browser-control-client";
 import { ClientError } from "eve/client";
 import type { PrepareSend } from "eve/react";
 import { useEveAgentRuntime } from "@assistant-ui/eve";
@@ -206,6 +208,7 @@ function RuntimeObserver({
 type ChatPaneProps = {
   readonly chat: Chat;
   readonly selected: boolean;
+  readonly browserReady: boolean;
   readonly registerCancel: (chatId: string, cancel: () => void) => () => void;
   readonly selectModel: (chatId: string, modelId: AnchorModelId) => void;
   readonly updateChat: (chatId: string, state: RuntimeState) => void;
@@ -216,6 +219,7 @@ type ChatPaneProps = {
 function ChatPane({
   chat,
   selected,
+  browserReady,
   registerCancel,
   selectModel,
   updateChat,
@@ -223,10 +227,18 @@ function ChatPane({
   onPersistenceError,
 }: ChatPaneProps) {
   const modelIdRef = useRef(chat.modelId);
+  const browserReadyRef = useRef(browserReady);
   const [resuming, setResuming] = useState(shouldResumeChat(chat.history));
   const [resumeFailed, setResumeFailed] = useState(false);
   modelIdRef.current = chat.modelId;
-  const headers = useCallback(() => ({ [ANCHOR_MODEL_HEADER]: modelIdRef.current }), []);
+  browserReadyRef.current = browserReady;
+  const headers = useCallback(
+    () => ({
+      [ANCHOR_MODEL_HEADER]: modelIdRef.current,
+      [BROWSER_CONTROL_HEADER]: browserControlHeaderValue(browserReadyRef.current),
+    }),
+    [],
+  );
   const handleEveError = useCallback(
     (error: Error) => {
       if (resuming && error instanceof ClientError && error.status === 404) {
@@ -417,6 +429,7 @@ export default function Home() {
   chatsRef.current = chats;
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
+  const [browserReady, setBrowserReady] = useState(false);
   const [creatingChat, setCreatingChat] = useState(false);
   const [createFailed, setCreateFailed] = useState(false);
   const cancelByChatId = useRef(new Map<string, () => void>());
@@ -684,6 +697,7 @@ export default function Home() {
               </div>
             )}
           </nav>
+          <BrowserControlToggle onReadyChange={setBrowserReady} />
           <p className="border-t border-zinc-200 px-4 py-3 text-xs text-zinc-500">
             Chats are saved and return after reload.
           </p>
@@ -695,6 +709,7 @@ export default function Home() {
               key={chat.id}
               chat={chat}
               selected={selectedChatId === chat.id}
+              browserReady={browserReady}
               registerCancel={registerCancel}
               selectModel={selectModel}
               updateChat={updateChat}

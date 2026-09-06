@@ -1,10 +1,11 @@
 import {
+  BROWSER_CONTROL_HEADER,
   BROWSER_CONTROL_OWNER_HEADER,
   PINCHTAB_ALLOWED_TOOLS,
   type BrowserControlStatusView,
 } from "@anchor-os/browser-control/types";
 
-export const BROWSER_CONTROL_HEADER = "x-anchor-os-browser-control";
+export { BROWSER_CONTROL_HEADER };
 export const BROWSER_CONTROL_AUTH_ATTRIBUTE = "anchorOsBrowserControl";
 
 export type BrowserControlSetting = "on" | "off";

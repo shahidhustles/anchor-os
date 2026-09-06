@@ -2,6 +2,8 @@ export const BROWSER_CONTROL_PROFILE_NAME = "Anchor OS";
 
 export const BROWSER_CONTROL_OWNER_HEADER = "x-eve-session-id";
 
+export const BROWSER_CONTROL_HEADER = "x-anchor-os-browser-control";
+
 export type BrowserControlStatus = "off" | "starting" | "on" | "stopping" | "error";
 
 export type BrowserControlStatusView = {
