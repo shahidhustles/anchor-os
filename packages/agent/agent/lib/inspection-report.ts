@@ -93,6 +93,7 @@ export type InspectionReportResult = {
   readonly imageCount: number;
   readonly logId: string;
   readonly cached: boolean;
+  readonly summary: string;
 };
 
 export type AssembledReport = {
@@ -433,6 +434,9 @@ function buildResult(input: {
     imageCount: input.manifest.images.length,
     logId: input.manifest.ocr.logId,
     cached: input.cached,
+    summary:
+      `Parsed ${input.manifest.pageCount} ${input.manifest.pageCount === 1 ? "page" : "pages"} into ${absolute(reportDir)}. ` +
+      "Inspect report.md, layout.json, and manifest.json with read_file or bash before making findings.",
   };
 }
 

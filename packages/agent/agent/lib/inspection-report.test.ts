@@ -189,6 +189,11 @@ test("parses one staged PDF into a complete report directory", async () => {
   expect(result.layoutPath).toBe(`/workspace/${reportDir}/layout.json`);
   expect(result.manifestPath).toBe(`/workspace/${reportDir}/manifest.json`);
   expect(result.imagePaths).toEqual([`/workspace/${reportDir}/images/page-001-image-001.jpg`]);
+  expect(result.summary).toContain(`Parsed 2 pages into /workspace/${reportDir}`);
+  expect(result.summary).toContain("report.md");
+  expect(result.summary).toContain("layout.json");
+  expect(result.summary).toContain("manifest.json");
+  expect(result.summary).toMatch(/read_file or bash/);
 
   expect(commands).toHaveLength(2);
   expect(commands[0]).toContain("pdfinfo '/workspace/attachments/abc123/pump-inspection.pdf'");
