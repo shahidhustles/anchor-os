@@ -1,0 +1,33 @@
+{
+  "name": "@anchor-os/plant-maintenance-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "test": "bun test src/lib/maintenance-store.test.ts src/components/assets-table.test.tsx src/components/work-order-table.test.tsx src/components/work-order-form.test.tsx src/components/app-footer.test.tsx",
+    "lint": "oxlint && oxfmt --check",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "26.4.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "oxfmt": "0.65.0",
+    "oxlint": "1.80.0",
+    "postcss": "8.5.26",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
