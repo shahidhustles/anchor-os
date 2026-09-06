@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@anchor-os/agent": "workspace:*",
+    "@anchor-os/browser-control": "workspace:*",
     "@assistant-ui/eve": "0.0.16",
     "@assistant-ui/react": "0.15.18",
     "@assistant-ui/react-markdown": "0.14.14",
