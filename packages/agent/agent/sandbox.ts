@@ -5,12 +5,12 @@ const APT_PACKAGES =
   "python3 python3-pip python3-lxml libreoffice pandoc poppler-utils zip unzip fonts-liberation";
 
 export default defineSandbox({
-  backend: microsandbox(),
+  backend: microsandbox({ memoryMiB: 2048 }),
   async bootstrap({ use }) {
     const sandbox = await use();
 
     await sandbox.run({
-      command: `sudo apt-get update -qq && sudo apt-get install -y -qq ${APT_PACKAGES}`,
+      command: `sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ${APT_PACKAGES}`,
     });
     await sandbox.run({
       command:

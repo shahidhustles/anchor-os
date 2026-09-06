@@ -21,6 +21,7 @@ type CapturedRequest = {
   readonly url: string;
   readonly method: string | undefined;
   readonly contentType: string | null;
+  readonly timeout: number | boolean | undefined;
   readonly body: string;
 };
 
@@ -31,6 +32,7 @@ function stubPaddleService(respond: () => Response): CapturedRequest[] {
       url: String(input),
       method: init?.method,
       contentType: new Headers(init?.headers).get("content-type"),
+      timeout: init?.timeout,
       body: String(init?.body ?? ""),
     });
     return respond();
@@ -95,6 +97,7 @@ test("posts the whole PDF with fileType 0 and returns ordered typed pages", asyn
   expect(requests[0]!.url).toBe("http://100.90.16.40:8080/layout-parsing");
   expect(requests[0]!.method).toBe("POST");
   expect(requests[0]!.contentType).toBe("application/json");
+  expect(requests[0]!.timeout).toBe(false);
   expect(JSON.parse(requests[0]!.body)).toEqual({
     file: PDF_BASE64,
     fileType: 0,

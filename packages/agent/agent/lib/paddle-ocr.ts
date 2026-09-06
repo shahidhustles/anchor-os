@@ -103,6 +103,7 @@ export async function parsePaddleOcrPdf(
         visualize: false,
       }),
       signal,
+      timeout: false,
     });
   } catch (error) {
     throw requestError(signal, url, error);
