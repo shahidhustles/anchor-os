@@ -1,4 +1,5 @@
 import { defineAgent, defineDynamic } from "eve";
+import { clearRoutedSelection, resolveRoutedModel } from "@anchor-os/model-router/eve";
 
 import {
   createOpenCodeModel,
@@ -15,10 +16,26 @@ export default defineAgent({
   },
   model: defineDynamic({
     events: {
-      "step.started": (_event, context) => {
+      "step.started": async (_event, context) => {
         const modelId = resolveModelId(
           context.session.auth.current?.attributes[ANCHOR_MODEL_AUTH_ATTRIBUTE],
         );
+
+        if (modelId === "auto" || modelId.startsWith("local:")) {
+          const first = context.messages.find((message) => message.role === "user");
+          const task =
+            typeof first?.content === "string"
+              ? first.content
+              : first?.content
+                  .filter((part) => part.type === "text")
+                  .map((part) => part.text)
+                  .join(" ");
+          return resolveRoutedModel({
+            requested: modelId.replace(/^local:/, ""),
+            task: task || "Process the attached document using local tools",
+          });
+        }
+        clearRoutedSelection();
 
         if (modelId === ANCHOR_MODEL_IDS.qwen) {
           return {

@@ -13,6 +13,9 @@
     "agent:info": "bun run --filter @anchor-os/agent info",
     "agent:build": "bun run --filter @anchor-os/agent build",
     "agent:test": "bun run --filter @anchor-os/agent test",
+    "model-router:lint": "bun run --filter @anchor-os/model-router lint",
+    "model-router:test": "bun run --filter @anchor-os/model-router test",
+    "model-router:typecheck": "bun run --filter @anchor-os/model-router typecheck",
     "clean:sandboxes": "bash scripts/clean-eve.sh",
     "clean:sandboxes:all": "bash scripts/clean-eve.sh --all"
   },
