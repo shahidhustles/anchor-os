@@ -28,6 +28,10 @@ For a Linux GPU machine, use `.venv/bin/python` in place of `.venv/Scripts/pytho
 
 ## Train and export
 
+### Google Colab
+
+Open [`colab.ipynb`](colab.ipynb) in a GPU runtime. The notebook clones the `model-router` branch, regenerates the synthetic dataset, accepts a zipped local checkpoint, resumes with the original batch settings, runs the validation gate and downloads the resulting artifacts. Do not upload confidential MRPL data. Colab is a hosted service.
+
 First measure a short run. Its artifact is only a training smoke test.
 
 ```powershell
