@@ -160,6 +160,71 @@ test("findOrCreateAnchorProfile creates a missing profile over HTTP", async () =
   assert.deepEqual(profile, { id: "prof_new", name: "Anchor OS" });
 });
 
+test("listTabs parses tab ids and urls and skips malformed entries", async () => {
+  const client = createPinchtabClient(
+    execWith((args) => {
+      assert.deepEqual(args, ["--server", "http://127.0.0.1:9867", "tab", "--json"]);
+      return ok(
+        JSON.stringify({
+          tabs: [
+            { id: "tab_blank", url: "about:blank", title: "", type: "page" },
+            { id: "tab_page", url: "https://example.com/", title: "Example", type: "page" },
+            { id: "tab_incomplete" },
+          ],
+        }),
+      );
+    }),
+  );
+  const tabs = await client.listTabs("http://127.0.0.1:9867");
+  assert.deepEqual(tabs, [
+    { id: "tab_blank", url: "about:blank" },
+    { id: "tab_page", url: "https://example.com/" },
+  ]);
+});
+
+test("listTabs returns an empty list when the command fails", async () => {
+  const client = createPinchtabClient(execWith(() => failed("no server")));
+  assert.deepEqual(await client.listTabs("http://127.0.0.1:9867"), []);
+});
+
+test("navigateTab navigates the given tab and ignores trailing CLI text", async () => {
+  const client = createPinchtabClient(
+    execWith((args) => {
+      assert.deepEqual(args, [
+        "--server",
+        "http://127.0.0.1:9867",
+        "nav",
+        "https://example.com",
+        "--tab",
+        "tab_blank",
+        "--json",
+      ]);
+      return ok(
+        JSON.stringify({
+          route: { requestedProvider: "chrome", usedProvider: "chrome" },
+          tabId: "tab_blank",
+          title: "Example Domain",
+          url: "https://example.com/",
+        }) + "\n\nNext steps\n  pinchtab snap # See page structure\n",
+      );
+    }),
+  );
+  const tab = await client.navigateTab(
+    "http://127.0.0.1:9867",
+    "tab_blank",
+    "https://example.com",
+  );
+  assert.deepEqual(tab, { id: "tab_blank", url: "https://example.com/" });
+});
+
+test("navigateTab returns null when the navigation fails", async () => {
+  const client = createPinchtabClient(execWith(() => failed("Navigation timed out")));
+  assert.equal(
+    await client.navigateTab("http://127.0.0.1:9867", "tab_blank", "https://example.com"),
+    null,
+  );
+});
+
 test("readConfig reads the port, bind, and token from the config file", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pinchtab-config-"));
   const configPath = join(dir, "config.json");

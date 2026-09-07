@@ -12,7 +12,13 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { BROWSER_CONTROL_OWNER_HEADER, isPinchtabToolAllowed } from "./types";
+import {
+  BROWSER_CONTROL_OWNER_HEADER,
+  isBlankTabUrl,
+  isPinchtabToolAllowed,
+  isSameUrl,
+  type PinchtabTab,
+} from "./types";
 
 export const ANONYMOUS_OWNER = "__anonymous__";
 
@@ -24,6 +30,8 @@ export type PinchtabMcpBridgeOptions = {
 
 export type PinchtabMcpBridgeDeps = {
   createUpstreamClient: () => Promise<Client>;
+  visibleTabWaitMs?: number;
+  visibleTabPollMs?: number;
 };
 
 const BRIDGE_SERVER_INFO = { name: "anchor-browser-control", version: "1.0.0" } as const;
@@ -38,7 +46,11 @@ export class PinchtabMcpBridge {
   private anchoredTabId: string | undefined;
   private closed = false;
 
-  private constructor(private readonly upstream: Client) {}
+  private constructor(
+    private readonly upstream: Client,
+    private readonly visibleTabWaitMs: number,
+    private readonly visibleTabPollMs: number,
+  ) {}
 
   static async create(options: PinchtabMcpBridgeOptions): Promise<PinchtabMcpBridge> {
     const transport = new StdioClientTransport({
@@ -51,11 +63,18 @@ export class PinchtabMcpBridge {
       version: BRIDGE_SERVER_INFO.version,
     });
     await upstream.connect(transport);
-    return new PinchtabMcpBridge(upstream);
+    return new PinchtabMcpBridge(upstream, VISIBLE_TAB_WAIT_MS, VISIBLE_TAB_POLL_MS);
   }
 
   static fromDeps(deps: PinchtabMcpBridgeDeps): Promise<PinchtabMcpBridge> {
-    return deps.createUpstreamClient().then((upstream) => new PinchtabMcpBridge(upstream));
+    return deps.createUpstreamClient().then(
+      (upstream) =>
+        new PinchtabMcpBridge(
+          upstream,
+          deps.visibleTabWaitMs ?? VISIBLE_TAB_WAIT_MS,
+          deps.visibleTabPollMs ?? VISIBLE_TAB_POLL_MS,
+        ),
+    );
   }
 
   async handleRequest(request: Request, parsedBody?: unknown): Promise<Response> {
@@ -147,10 +166,12 @@ export class PinchtabMcpBridge {
         return { content: [{ type: "text", text: owner }], isError: true };
       }
       try {
-        const toolArguments = await this.routeToolArguments(
-          request.params.name,
-          request.params.arguments,
-        );
+        let toolArguments = request.params.arguments;
+        if (request.params.name === "pinchtab_navigate") {
+          const routed = await this.routeNavigate(toolArguments);
+          if (routed.kind === "shortCircuit") return routed.result;
+          toolArguments = routed.arguments;
+        }
         const result = await upstream.callTool({
           name: request.params.name,
           arguments: toolArguments,
@@ -167,40 +188,65 @@ export class PinchtabMcpBridge {
     return server;
   }
 
-  private async routeToolArguments(
-    toolName: string,
+  private async routeNavigate(
     toolArguments: Record<string, unknown> | undefined,
-  ): Promise<Record<string, unknown> | undefined> {
-    if (toolName !== "pinchtab_navigate") return toolArguments;
-
+  ): Promise<RoutedNavigation> {
     const explicitTabId = readNonEmptyString(toolArguments?.tabId);
+    const requestedUrl = readNonEmptyString(toolArguments?.url);
     if (explicitTabId !== undefined) {
       this.anchoredTabId = explicitTabId;
-      return toolArguments;
+      return { kind: "forward", arguments: toolArguments };
     }
 
-    const tabsResult = await this.upstream.callTool({
-      name: "pinchtab_list_tabs",
-      arguments: {},
-    });
-    const tabs = readTabs(tabsResult);
+    const tabs = await this.listVisibleTabs();
     if (tabs === undefined) {
-      if (this.anchoredTabId !== undefined) return toolArguments;
+      if (this.anchoredTabId !== undefined) {
+        return { kind: "forward", arguments: { ...toolArguments, tabId: this.anchoredTabId } };
+      }
       throw new McpError(
         ErrorCode.InternalError,
         "Could not find the visible Chrome tab before navigation.",
       );
     }
 
-    if (this.anchoredTabId !== undefined && tabs.some((tab) => tab.id === this.anchoredTabId)) {
-      return toolArguments;
+    // No tab exists yet: let PinchTab open one, as it would for a fresh window.
+    if (tabs.length === 0) {
+      return { kind: "forward", arguments: toolArguments };
+    }
+
+    if (this.anchoredTabId !== undefined) {
+      const anchored = tabs.find((tab) => tab.id === this.anchoredTabId);
+      if (anchored !== undefined) {
+        if (requestedUrl !== undefined && isSameUrl(anchored.url, requestedUrl)) {
+          return { kind: "shortCircuit", result: alreadyAtResult(requestedUrl) };
+        }
+        return { kind: "forward", arguments: { ...toolArguments, tabId: anchored.id } };
+      }
     }
 
     const target = tabs.find((tab) => isBlankTabUrl(tab.url)) ?? tabs[0];
-    if (target === undefined) return toolArguments;
-
     this.anchoredTabId = target.id;
-    return { ...toolArguments, tabId: target.id };
+    if (requestedUrl !== undefined && isSameUrl(target.url, requestedUrl)) {
+      return { kind: "shortCircuit", result: alreadyAtResult(requestedUrl) };
+    }
+    return { kind: "forward", arguments: { ...toolArguments, tabId: target.id } };
+  }
+
+  // The instance can report "running" before its first tab is listable, so poll
+  // briefly instead of letting a tab-less navigation spawn a spare tab.
+  private async listVisibleTabs(): Promise<PinchtabTab[] | undefined> {
+    const deadline = Date.now() + this.visibleTabWaitMs;
+    for (;;) {
+      const tabsResult = await this.upstream.callTool({
+        name: "pinchtab_list_tabs",
+        arguments: {},
+      });
+      const tabs = readTabs(tabsResult);
+      if (tabs !== undefined && tabs.length > 0) return tabs;
+      if (tabs === undefined) return undefined;
+      if (Date.now() >= deadline) return tabs;
+      await sleep(this.visibleTabPollMs);
+    }
   }
 
   private acquireOwner(eveSessionId: string | undefined): { release: () => void } | string {
@@ -227,7 +273,18 @@ export class PinchtabMcpBridge {
   }
 }
 
-type PinchtabTab = { id: string; url: string };
+type RoutedNavigation =
+  | { kind: "forward"; arguments: Record<string, unknown> | undefined }
+  | { kind: "shortCircuit"; result: { content: Array<{ type: "text"; text: string }> } };
+
+const VISIBLE_TAB_WAIT_MS = 5_000;
+const VISIBLE_TAB_POLL_MS = 250;
+
+function alreadyAtResult(url: string) {
+  return {
+    content: [{ type: "text" as const, text: `Already at ${url}; no navigation was needed.` }],
+  };
+}
 
 function readTabs(result: unknown): PinchtabTab[] | undefined {
   if (!isRecord(result) || result.isError === true || !Array.isArray(result.content)) {
@@ -265,8 +322,8 @@ function readNonEmptyString(value: unknown): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
-function isBlankTabUrl(url: string): boolean {
-  return url === "" || url === "about:blank" || url.startsWith("chrome://newtab");
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function isInitializeBody(

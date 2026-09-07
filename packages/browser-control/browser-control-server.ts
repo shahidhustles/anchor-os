@@ -1,7 +1,13 @@
 import { createPinchtabClient, PINCHTAB_BINARY } from "./pinchtab-process";
 import type { PinchtabClient, PinchtabProfile } from "./pinchtab-process";
 import { PinchtabMcpBridge } from "./pinchtab-mcp-bridge";
-import type { BrowserBridge, BrowserControlStatus, BrowserControlStatusView } from "./types";
+import {
+  isBlankTabUrl,
+  isSameUrl,
+  type BrowserBridge,
+  type BrowserControlStatus,
+  type BrowserControlStatusView,
+} from "./types";
 
 export type BrowserControlDeps = {
   pinchtab: PinchtabClient;
@@ -143,9 +149,10 @@ export async function handleBrowserControlMcpRequest(request: Request): Promise<
       { status: 503, headers: { "Content-Type": "application/json" } },
     );
   }
-  if (await isBrowserToolCall(request)) {
+  const toolCall = await readBrowserToolCall(request);
+  if (toolCall.isBrowserCall) {
     try {
-      await ensureHeadedInstance(rt);
+      await ensureHeadedInstance(rt, toolCall.navigateUrl);
     } catch (error) {
       return jsonRpcUnavailable(
         error instanceof Error ? error.message : "Could not start the headed browser instance.",
@@ -188,11 +195,11 @@ async function cleanupOwned(rt: BrowserControlRuntime): Promise<void> {
   }
 }
 
-async function ensureHeadedInstance(rt: BrowserControlRuntime): Promise<void> {
+async function ensureHeadedInstance(rt: BrowserControlRuntime, navigateUrl?: string): Promise<void> {
   const existingStart = rt.state.instanceStart;
   if (existingStart !== undefined) return existingStart;
 
-  const start = startOrReuseHeadedInstance(rt);
+  const start = startOrReuseHeadedInstance(rt, navigateUrl);
   rt.state.instanceStart = start;
   try {
     await start;
@@ -201,7 +208,10 @@ async function ensureHeadedInstance(rt: BrowserControlRuntime): Promise<void> {
   }
 }
 
-async function startOrReuseHeadedInstance(rt: BrowserControlRuntime): Promise<void> {
+async function startOrReuseHeadedInstance(
+  rt: BrowserControlRuntime,
+  navigateUrl?: string,
+): Promise<void> {
   const { state, deps } = rt;
   if (state.serverUrl === undefined || state.profile === undefined) {
     throw new Error("Browser control is not ready.");
@@ -223,32 +233,73 @@ async function startOrReuseHeadedInstance(rt: BrowserControlRuntime): Promise<vo
   if (instance === null) throw new Error("Could not start the headed browser instance.");
   state.instanceId = instance.id;
   state.instanceOwned = true;
-  if (await deps.pinchtab.waitForInstanceRunning(state.serverUrl, instance.id)) return;
+  if (!(await deps.pinchtab.waitForInstanceRunning(state.serverUrl, instance.id))) {
+    await deps.pinchtab.stopInstance(state.serverUrl, instance.id).catch(() => undefined);
+    state.instanceId = undefined;
+    state.instanceOwned = false;
+    throw new Error("The browser instance did not become ready.");
+  }
 
-  await deps.pinchtab.stopInstance(state.serverUrl, instance.id).catch(() => undefined);
-  state.instanceId = undefined;
-  state.instanceOwned = false;
-  throw new Error("The browser instance did not become ready.");
+  // Land the startup tab directly on the requested URL so the window opens on the
+  // target page instead of a blank tab. Best-effort: the bridge still routes the
+  // caller's navigation if this fails.
+  if (navigateUrl !== undefined) {
+    await landStartupTab(rt, navigateUrl).catch(() => undefined);
+  }
 }
 
-async function isBrowserToolCall(request: Request): Promise<boolean> {
-  if (request.method !== "POST") return false;
+async function landStartupTab(rt: BrowserControlRuntime, url: string): Promise<void> {
+  const { state, deps } = rt;
+  if (state.serverUrl === undefined) return;
+
+  const deadline = Date.now() + STARTUP_TAB_WAIT_MS;
+  let tabs = await deps.pinchtab.listTabs(state.serverUrl).catch(() => []);
+  while (tabs.length === 0 && Date.now() < deadline) {
+    await sleep(STARTUP_TAB_POLL_MS);
+    tabs = await deps.pinchtab.listTabs(state.serverUrl).catch(() => []);
+  }
+  const target = tabs.find((tab) => isBlankTabUrl(tab.url)) ?? tabs[0];
+  if (target === undefined || isSameUrl(target.url, url)) return;
+  await deps.pinchtab.navigateTab(state.serverUrl, target.id, url);
+}
+
+type BrowserToolCall = {
+  isBrowserCall: boolean;
+  navigateUrl?: string;
+};
+
+async function readBrowserToolCall(request: Request): Promise<BrowserToolCall> {
+  if (request.method !== "POST") return { isBrowserCall: false };
   try {
     const body: unknown = await request.clone().json();
     const messages = Array.isArray(body) ? body : [body];
-    return messages.some((message) => {
-      if (!isRecord(message) || message["method"] !== "tools/call") return false;
+    for (const message of messages) {
+      if (!isRecord(message) || message["method"] !== "tools/call") continue;
       const params = message["params"];
-      if (!isRecord(params)) return false;
-      return params["name"] !== "pinchtab_health";
-    });
+      if (!isRecord(params) || params["name"] === "pinchtab_health") continue;
+      const name = params["name"];
+      const args = params["arguments"];
+      if (name === "pinchtab_navigate" && isRecord(args) && typeof args["url"] === "string") {
+        const url = args["url"].trim();
+        if (url !== "") return { isBrowserCall: true, navigateUrl: url };
+      }
+      return { isBrowserCall: true };
+    }
+    return { isBrowserCall: false };
   } catch {
-    return false;
+    return { isBrowserCall: false };
   }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const STARTUP_TAB_WAIT_MS = 5_000;
+const STARTUP_TAB_POLL_MS = 250;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function jsonRpcUnavailable(message: string): Response {

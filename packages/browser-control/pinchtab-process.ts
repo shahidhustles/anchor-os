@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
-import { BROWSER_CONTROL_PROFILE_NAME } from "./types";
+import { BROWSER_CONTROL_PROFILE_NAME, type PinchtabTab } from "./types";
 
 export const PINCHTAB_BINARY = "pinchtab";
 
@@ -57,6 +57,8 @@ export type PinchtabClient = {
     timeoutMs?: number,
   ): Promise<boolean>;
   stopInstance(serverUrl: string, instanceId: string): Promise<void>;
+  listTabs(serverUrl: string): Promise<PinchtabTab[]>;
+  navigateTab(serverUrl: string, tabId: string, url: string): Promise<PinchtabTab | null>;
 };
 
 export function createPinchtabExecutor(): PinchtabExecutor {
@@ -203,6 +205,28 @@ export function createPinchtabClient(
     async stopInstance(serverUrl, instanceId) {
       await executor(["--server", serverUrl, "instance", "stop", instanceId]);
     },
+
+    async listTabs(serverUrl) {
+      const result = await executor(["--server", serverUrl, "tab", "--json"]);
+      if (result.exitCode !== 0) return [];
+      const parsed = readFirstJsonObject(result.stdout);
+      if (parsed === undefined || !Array.isArray(parsed.tabs)) return [];
+      return parsed.tabs.flatMap((tab): PinchtabTab[] => {
+        if (!isRecord(tab) || typeof tab.id !== "string" || typeof tab.url !== "string") return [];
+        return [{ id: tab.id, url: tab.url }];
+      });
+    },
+
+    async navigateTab(serverUrl, tabId, url) {
+      const result = await executor(
+        ["--server", serverUrl, "nav", url, "--tab", tabId, "--json"],
+        { timeoutMs: 60_000 },
+      );
+      if (result.exitCode !== 0) return null;
+      const parsed = readFirstJsonObject(result.stdout);
+      if (parsed === undefined || typeof parsed.tabId !== "string") return null;
+      return { id: parsed.tabId, url: typeof parsed.url === "string" ? parsed.url : url };
+    },
   };
 }
 
@@ -261,6 +285,42 @@ async function listInstances(
 
 function parseJsonObject(stdout: string): Record<string, unknown> {
   return JSON.parse(extractJson(stdout)) as Record<string, unknown>;
+}
+
+// Some commands (e.g. `nav --json`) print a JSON document followed by trailing
+// human-readable text. This isolates the first top-level object by brace matching.
+function readFirstJsonObject(stdout: string): Record<string, unknown> | undefined {
+  const start = stdout.indexOf("{");
+  if (start === -1) return undefined;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < stdout.length; i += 1) {
+    const ch = stdout[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          return JSON.parse(stdout.slice(start, i + 1)) as Record<string, unknown>;
+        } catch {
+          return undefined;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseJsonArray(stdout: string): Array<Record<string, unknown>> {

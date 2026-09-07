@@ -10,7 +10,7 @@ import {
 } from "./browser-control-server";
 import type { BrowserControlDeps } from "./browser-control-server";
 import type { PinchtabClient, StartedPinchtabServer } from "./pinchtab-process";
-import type { BrowserBridge } from "./types";
+import type { BrowserBridge, PinchtabTab } from "./types";
 
 type Calls = {
   startServer: number;
@@ -19,6 +19,8 @@ type Calls = {
   stopInstance: number;
   bridgeClose: number;
   bridgeCreated: number;
+  listTabs: number;
+  navigateTab: number;
 };
 
 function makeDeps(
@@ -29,6 +31,7 @@ function makeDeps(
     instanceReady?: boolean;
     failCreateBridge?: boolean;
     strategy?: string;
+    listTabsResult?: PinchtabTab[];
   } = {},
 ): { deps: BrowserControlDeps; calls: Calls } {
   const calls: Calls = {
@@ -38,6 +41,8 @@ function makeDeps(
     stopInstance: 0,
     bridgeClose: 0,
     bridgeCreated: 0,
+    listTabs: 0,
+    navigateTab: 0,
   };
 
   const pinchtab: PinchtabClient = {
@@ -65,6 +70,14 @@ function makeDeps(
     stopInstance: async () => {
       calls.stopInstance += 1;
     },
+    listTabs: async () => {
+      calls.listTabs += 1;
+      return overrides.listTabsResult ?? [{ id: "tab_blank", url: "about:blank" }];
+    },
+    navigateTab: async (_serverUrl, tabId, url) => {
+      calls.navigateTab += 1;
+      return { id: tabId, url };
+    },
   };
 
   const bridge: BrowserBridge = {
@@ -85,6 +98,19 @@ function makeDeps(
   };
 
   return { deps, calls };
+}
+
+function mcpToolRequest(name: string, args: Record<string, unknown>): Request {
+  return new Request("http://127.0.0.1:3000/api/browser-control/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name, arguments: args },
+      id: 1,
+    }),
+  });
 }
 
 test("starts off", () => {
@@ -185,6 +211,101 @@ test("the first browser tool call launches the headed profile", async () => {
 
   await disableBrowserControl();
   assert.equal(calls.stopInstance, 1, "disable stops the instance Anchor OS launched");
+});
+
+test("a first navigate opens the browser directly on the requested page", async () => {
+  resetBrowserControlForTests();
+  const { deps, calls } = makeDeps();
+  const navigations: Array<{ tabId: string; url: string }> = [];
+  deps.pinchtab.navigateTab = async (_serverUrl, tabId, url) => {
+    navigations.push({ tabId, url });
+    return { id: tabId, url };
+  };
+  await enableBrowserControl(deps);
+
+  const response = await handleBrowserControlMcpRequest(
+    mcpToolRequest("pinchtab_navigate", { url: "https://example.com/start" }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.startInstance, 1);
+  assert.equal(calls.listTabs, 1, "the startup tab is already listed, no polling needed");
+  assert.deepEqual(navigations, [{ tabId: "tab_blank", url: "https://example.com/start" }]);
+});
+
+test("waits for the startup tab before landing the navigation", async () => {
+  resetBrowserControlForTests();
+  const { deps } = makeDeps();
+  let listCalls = 0;
+  deps.pinchtab.listTabs = async () => {
+    listCalls += 1;
+    return listCalls >= 2 ? [{ id: "tab_blank", url: "chrome://newtab/" }] : [];
+  };
+  const navigations: string[] = [];
+  deps.pinchtab.navigateTab = async (_serverUrl, _tabId, url) => {
+    navigations.push(url);
+    return { id: "tab_blank", url };
+  };
+  await enableBrowserControl(deps);
+
+  const response = await handleBrowserControlMcpRequest(
+    mcpToolRequest("pinchtab_navigate", { url: "https://example.com" }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.ok(listCalls >= 2, "retries the tab list until the startup tab appears");
+  assert.deepEqual(navigations, ["https://example.com"]);
+});
+
+test("a first non-navigate call launches the browser without landing a page", async () => {
+  resetBrowserControlForTests();
+  const { deps, calls } = makeDeps();
+  await enableBrowserControl(deps);
+
+  const response = await handleBrowserControlMcpRequest(mcpToolRequest("pinchtab_snapshot", {}));
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.startInstance, 1);
+  assert.equal(calls.listTabs, 0);
+  assert.equal(calls.navigateTab, 0);
+});
+
+test("reusing a running instance does not land a navigation", async () => {
+  resetBrowserControlForTests();
+  const { deps, calls } = makeDeps();
+  deps.pinchtab.findRunningInstanceForProfile = async () => ({
+    id: "inst_existing",
+    profileId: "prof_anchor",
+    status: "running",
+  });
+  await enableBrowserControl(deps);
+
+  const response = await handleBrowserControlMcpRequest(
+    mcpToolRequest("pinchtab_navigate", { url: "https://example.com" }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.startInstance, 0);
+  assert.equal(calls.navigateTab, 0, "the bridge routes the call into the existing window");
+});
+
+test("a failed startup landing still forwards the tool call", async () => {
+  resetBrowserControlForTests();
+  const { deps, calls } = makeDeps();
+  let landingAttempts = 0;
+  deps.pinchtab.navigateTab = async () => {
+    landingAttempts += 1;
+    throw new Error("navigation failed");
+  };
+  await enableBrowserControl(deps);
+
+  const response = await handleBrowserControlMcpRequest(
+    mcpToolRequest("pinchtab_navigate", { url: "https://example.com" }),
+  );
+
+  assert.equal(response.status, 200, "the bridge still handles the navigation");
+  assert.equal(calls.startInstance, 1);
+  assert.equal(landingAttempts, 1);
 });
 
 test("disable leaves a pre-existing browser instance running", async () => {

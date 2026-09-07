@@ -52,3 +52,22 @@ export function isLoopbackHost(host: string | null): boolean {
   const hostname = host.replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
   return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
 }
+
+export type PinchtabTab = { id: string; url: string };
+
+export function isBlankTabUrl(url: string): boolean {
+  return url === "" || url === "about:blank" || url.startsWith("chrome://newtab");
+}
+
+export function isSameUrl(a: string, b: string): boolean {
+  try {
+    const left = new URL(a);
+    const right = new URL(b);
+    return (
+      left.origin === right.origin &&
+      left.pathname.replace(/\/+$/, "") === right.pathname.replace(/\/+$/, "")
+    );
+  } catch {
+    return a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+  }
+}

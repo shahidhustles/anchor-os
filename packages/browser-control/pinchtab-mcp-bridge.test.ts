@@ -152,6 +152,163 @@ test("routes unscoped navigation through the existing visible tab", async () => 
   }
 });
 
+test("waits for the startup tab before routing navigation into it", async () => {
+  const calls: Array<{ name: string; arguments?: Record<string, unknown> }> = [];
+  let listCalls = 0;
+  const upstream = makeUpstream({
+    callTool: async (params) => {
+      calls.push(params);
+      if (params.name === "pinchtab_list_tabs") {
+        listCalls += 1;
+        const tabs = listCalls >= 2 ? [{ id: "tab_blank", url: "about:blank" }] : [];
+        return { content: [{ type: "text", text: JSON.stringify({ tabs }) }] };
+      }
+      return { content: [{ type: "text", text: "navigated" }] };
+    },
+  });
+  const bridge = await PinchtabMcpBridge.fromDeps({
+    createUpstreamClient: async () => upstream,
+    visibleTabWaitMs: 500,
+    visibleTabPollMs: 50,
+  });
+  try {
+    const response = await bridge.handleRequest(
+      postRequest({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "pinchtab_navigate", arguments: { url: "https://example.com" } },
+      }),
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls, [
+      { name: "pinchtab_list_tabs", arguments: {} },
+      { name: "pinchtab_list_tabs", arguments: {} },
+      {
+        name: "pinchtab_navigate",
+        arguments: { url: "https://example.com", tabId: "tab_blank" },
+      },
+    ]);
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("skips the upstream navigate when the tab is already at the requested url", async () => {
+  const calls: string[] = [];
+  const upstream = makeUpstream({
+    callTool: async (params) => {
+      calls.push(params.name);
+      if (params.name === "pinchtab_list_tabs") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ tabs: [{ id: "tab_1", url: "https://example.com/" }] }),
+            },
+          ],
+        };
+      }
+      return { content: [{ type: "text", text: "navigated" }] };
+    },
+  });
+  const bridge = await createBridge(upstream);
+  try {
+    const response = await bridge.handleRequest(
+      postRequest({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "pinchtab_navigate", arguments: { url: "https://example.com" } },
+      }),
+    );
+    const body = (await response.json()) as {
+      result: { content: Array<{ type: string; text?: string }> };
+    };
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls, ["pinchtab_list_tabs"], "no upstream navigate when already there");
+    assert.ok(body.result.content[0].text?.includes("https://example.com"));
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("does not re-navigate an anchored tab that is already at the url", async () => {
+  let tabs = [{ id: "tab_1", url: "about:blank" }];
+  let upstreamNavigates = 0;
+  const upstream = makeUpstream({
+    callTool: async (params) => {
+      if (params.name === "pinchtab_list_tabs") {
+        return { content: [{ type: "text", text: JSON.stringify({ tabs }) }] };
+      }
+      if (params.name === "pinchtab_navigate") {
+        upstreamNavigates += 1;
+        tabs = [{ id: "tab_1", url: String(params.arguments?.url) }];
+        return { content: [{ type: "text", text: "navigated" }] };
+      }
+      return { content: [] };
+    },
+  });
+  const bridge = await createBridge(upstream);
+  const navigate = (id: number, url: string) =>
+    bridge.handleRequest(
+      postRequest({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name: "pinchtab_navigate", arguments: { url } },
+      }),
+    );
+
+  try {
+    await navigate(1, "https://example.com/a");
+    await navigate(2, "https://example.com/a");
+    assert.equal(upstreamNavigates, 1, "the repeat navigation is skipped");
+  } finally {
+    await bridge.close();
+  }
+});
+
+test("forwards a tab-less navigate when the window has no tabs after waiting", async () => {
+  const calls: string[] = [];
+  const upstream = makeUpstream({
+    callTool: async (params) => {
+      calls.push(params.name);
+      if (params.name === "pinchtab_list_tabs") {
+        return { content: [{ type: "text", text: JSON.stringify({ tabs: [] }) }] };
+      }
+      return { content: [{ type: "text", text: "navigated" }] };
+    },
+  });
+  const bridge = await PinchtabMcpBridge.fromDeps({
+    createUpstreamClient: async () => upstream,
+    visibleTabWaitMs: 100,
+    visibleTabPollMs: 25,
+  });
+  try {
+    const response = await bridge.handleRequest(
+      postRequest({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "pinchtab_navigate", arguments: { url: "https://example.com" } },
+      }),
+    );
+    const navigateCall = calls.at(-1);
+
+    assert.equal(response.status, 200);
+    assert.equal(navigateCall, "pinchtab_navigate", "PinchTab opens the tab");
+    assert.ok(
+      calls.filter((name) => name === "pinchtab_list_tabs").length >= 2,
+      "polled for a tab before giving up",
+    );
+  } finally {
+    await bridge.close();
+  }
+});
+
 test("re-resolves the visible tab when Chrome is reopened", async () => {
   let tabs = [{ id: "tab_first", url: "about:blank" }];
   const navigations: Array<Record<string, unknown> | undefined> = [];
