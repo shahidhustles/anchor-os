@@ -9,14 +9,23 @@ export const WHATSAPP_BROWSER_UNAVAILABLE_MESSAGE =
 
 const WHATSAPP_TEXT_LIMIT = 65_536;
 
-export type WhatsAppConfig =
-  | { readonly enabled: false }
-  | {
-      readonly enabled: true;
-      readonly allowedSender: string;
-      readonly authDir: string;
-      readonly receivingNumber: string;
-    };
+export type WhatsAppConfig = {
+  readonly allowedSender: string;
+  readonly authDir: string;
+  readonly eveSocketUrl: string | null;
+  readonly receivingNumber: string;
+};
+
+export type WhatsAppBridgeInbound = {
+  readonly kind: "message";
+  readonly jid: string;
+  readonly replyMode: WhatsAppReplyMode;
+  readonly text: string;
+};
+
+export type WhatsAppBridgeOutbound =
+  | { readonly kind: "presence"; readonly jid: string; readonly state: "composing" | "paused" }
+  | { readonly kind: "text" | "voice"; readonly jid: string; readonly text: string };
 
 export type WhatsAppMessageKey = {
   readonly remoteJid?: string | null;
@@ -51,8 +60,6 @@ export function normalizePhoneNumber(value: string): string {
 export function readWhatsAppConfig(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): WhatsAppConfig {
-  if (env.ANCHOR_WHATSAPP_ENABLED !== "1") return { enabled: false };
-
   const allowedSender = normalizePhoneNumber(
     env.ANCHOR_WHATSAPP_ALLOWED_SENDER ?? DEFAULT_WHATSAPP_ALLOWED_SENDER,
   );
@@ -65,11 +72,29 @@ export function readWhatsAppConfig(
   if (receivingNumber === "") {
     throw new Error("ANCHOR_WHATSAPP_RECEIVING_NUMBER must contain a phone number");
   }
+  const eveSocketUrl = env.ANCHOR_WHATSAPP_EVE_SOCKET_URL?.trim() || null;
+  if (eveSocketUrl === null) {
+    return {
+      allowedSender,
+      authDir: env.ANCHOR_WHATSAPP_AUTH_DIR?.trim() || "./auth_info_baileys",
+      eveSocketUrl,
+      receivingNumber,
+    };
+  }
+  let parsedEveSocketUrl: URL;
+  try {
+    parsedEveSocketUrl = new URL(eveSocketUrl);
+  } catch {
+    throw new Error("ANCHOR_WHATSAPP_EVE_SOCKET_URL must be a valid WebSocket URL");
+  }
+  if (parsedEveSocketUrl.protocol !== "ws:" && parsedEveSocketUrl.protocol !== "wss:") {
+    throw new Error("ANCHOR_WHATSAPP_EVE_SOCKET_URL must use ws or wss");
+  }
 
   return {
-    enabled: true,
     allowedSender,
     authDir: env.ANCHOR_WHATSAPP_AUTH_DIR?.trim() || "./auth_info_baileys",
+    eveSocketUrl: parsedEveSocketUrl.toString(),
     receivingNumber,
   };
 }
@@ -94,6 +119,16 @@ export function phoneJidForMessage(key: WhatsAppMessageKey): string | null {
 export function isAllowedWhatsAppSender(key: WhatsAppMessageKey, allowedSender: string): boolean {
   const jid = phoneJidForMessage(key);
   return jid !== null && normalizePhoneNumber(jid) === normalizePhoneNumber(allowedSender);
+}
+
+export function isAllowedWhatsAppJid(
+  jid: string,
+  allowedSender: string = DEFAULT_WHATSAPP_ALLOWED_SENDER,
+): boolean {
+  return (
+    jid.endsWith("@s.whatsapp.net") &&
+    normalizePhoneNumber(jid) === normalizePhoneNumber(allowedSender)
+  );
 }
 
 export function whatsappContinuationAddress(key: WhatsAppMessageKey): string | null {
@@ -229,6 +264,51 @@ export function takeWhatsAppReplyMode(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function parseWhatsAppBridgeInbound(value: unknown): WhatsAppBridgeInbound | null {
+  if (!isRecord(value)) return null;
+  if (value.kind !== "message" || typeof value.jid !== "string") return null;
+  if (typeof value.text !== "string" || value.text.trim() === "") return null;
+  if (value.replyMode !== "text" && value.replyMode !== "voice") return null;
+  return {
+    kind: "message",
+    jid: value.jid,
+    replyMode: value.replyMode,
+    text: value.text,
+  };
+}
+
+export function parseWhatsAppBridgeOutbound(value: unknown): WhatsAppBridgeOutbound | null {
+  if (!isRecord(value) || typeof value.jid !== "string") return null;
+  if (value.kind === "presence") {
+    if (value.state !== "composing" && value.state !== "paused") return null;
+    return { kind: "presence", jid: value.jid, state: value.state };
+  }
+  if (value.kind !== "text" && value.kind !== "voice") return null;
+  if (typeof value.text !== "string" || value.text.trim() === "") return null;
+  return { kind: value.kind, jid: value.jid, text: value.text };
+}
+
+export function whatsappSocketUrlFromEveRegistry(value: unknown): string | null {
+  if (!isRecord(value) || typeof value.origin !== "string") return null;
+  let origin: URL;
+  try {
+    origin = new URL(value.origin);
+  } catch {
+    return null;
+  }
+  const isLoopback =
+    origin.hostname === "localhost" ||
+    origin.hostname === "::1" ||
+    origin.hostname === "[::1]" ||
+    /^127(?:\.\d{1,3}){3}$/.test(origin.hostname);
+  if (!isLoopback || (origin.protocol !== "http:" && origin.protocol !== "https:")) return null;
+  origin.protocol = origin.protocol === "https:" ? "wss:" : "ws:";
+  origin.pathname = "/whatsapp/socket";
+  origin.search = "";
+  origin.hash = "";
+  return origin.toString();
 }
 
 export function disconnectStatusCode(error: unknown): number | undefined {

@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "eve dev --no-ui --logs all --port 2000",
+    "whatsapp": "bun whatsapp-server.ts",
     "info": "eve info",
     "build": "eve build",
     "test": "bun test agent/lib/*.test.ts"

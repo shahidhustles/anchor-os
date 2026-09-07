@@ -11,6 +11,7 @@ Create:
 - `packages/agent/agent/channels/whatsapp.ts`
 - `packages/agent/agent/lib/whatsapp.ts`
 - `packages/agent/agent/lib/whatsapp.test.ts`
+- `packages/agent/whatsapp-server.ts`
 - `apps/plant-maintenance-demo/src/components/work-order-priority-editor.tsx`
 - `apps/plant-maintenance-demo/src/components/work-order-priority-editor.test.tsx`
 
@@ -28,8 +29,9 @@ Modify:
 
 ## Implementation notes
 
-- Adapt the Baileys socket, bootstrap route, queue, QR, and final-delivery behavior from `/Users/shahidpatel/codes/hackathons/eve-wa-adapter/agent/channels/whatsapp.ts` to Eve 0.52.2. Keep the channel text-only in this ticket.
-- Start the socket only when `ANCHOR_WHATSAPP_ENABLED=1`. `bun run dev:whatsapp` starts Eve on port 2000, waits for health, then starts the web app on port 3000 with `EVE_BASE_URL` set to that Eve process. It cannot run beside `bun dev` because both own port 3000.
+- Adapt the Baileys socket, queue, QR, and final-delivery behavior from `/Users/shahidpatel/codes/hackathons/eve-wa-adapter/agent/channels/whatsapp.ts` to Eve 0.52.2. Keep the channel text-only in this ticket.
+- Keep the existing `bun run dev` behavior in `apps/web`, where `withEve` starts Eve beside Next.js. `bun run dev:whatsapp` starts only the standalone Baileys adapter and discovers the running Eve process through its local development registry.
+- Keep the adapter running across Eve restarts. Rediscover Eve's port, reconnect the bridge, and flush accepted queued messages when Eve returns.
 - Accept direct messages only from normalized sender `917028546994`. The receiving account `917276411669` comes from the linked Baileys credentials.
 - Use the sender JID as the continuation address, `turnPolicy: "queue"`, and a stable WhatsApp user principal whose attributes set `anchorOsBrowserControl: "on"`.
 - Check browser-control health before dispatch. If it is off or unhealthy, tell the sender to enable it and create no browser turn.
@@ -43,7 +45,8 @@ None.
 
 ## Done when
 
-- `bun dev` does not touch WhatsApp, while `bun run dev:whatsapp` connects one Baileys socket for `+91 7276411669`.
+- `bun run dev` from `apps/web` starts web + Eve without touching WhatsApp. `bun run dev:whatsapp` independently connects one Baileys socket for `+91 7276411669`.
+- Restarting Eve, including on a different development port, reconnects the bridge without another QR scan or WhatsApp restart.
 - Any sender except `+91 7028546994` is ignored without creating an Eve session.
 - Two accepted messages use the same Eve session and microsandbox workspace; `/reset` makes the following message use a new session and workspace.
 - With browser control off, WhatsApp receives a short enablement instruction and PlantOps remains unchanged.

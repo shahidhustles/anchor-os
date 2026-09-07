@@ -12,7 +12,10 @@ import {
   isResetCommand,
   enqueueWhatsAppTask,
   markWhatsAppListenersAttached,
+  isAllowedWhatsAppJid,
   normalizePhoneNumber,
+  parseWhatsAppBridgeInbound,
+  parseWhatsAppBridgeOutbound,
   queueWhatsAppReplyMode,
   readWhatsAppConfig,
   renderWhatsAppInputRequest,
@@ -22,22 +25,26 @@ import {
   splitWhatsAppText,
   takeWhatsAppReplyMode,
   whatsappContinuationAddress,
+  whatsappSocketUrlFromEveRegistry,
   whatsappUserAuth,
 } from "./whatsapp";
 
 describe("WhatsApp startup configuration", () => {
-  test("stays disabled unless the opt-in value is exactly 1", () => {
-    expect(readWhatsAppConfig({})).toEqual({ enabled: false });
-    expect(readWhatsAppConfig({ ANCHOR_WHATSAPP_ENABLED: "true" })).toEqual({ enabled: false });
-  });
-
-  test("uses safe demo defaults only after opt-in", () => {
-    expect(readWhatsAppConfig({ ANCHOR_WHATSAPP_ENABLED: "1" })).toEqual({
-      enabled: true,
+  test("uses safe demo defaults when the standalone adapter starts", () => {
+    expect(readWhatsAppConfig({})).toEqual({
       allowedSender: DEFAULT_WHATSAPP_ALLOWED_SENDER,
       authDir: "./auth_info_baileys",
+      eveSocketUrl: null,
       receivingNumber: DEFAULT_WHATSAPP_RECEIVING_NUMBER,
     });
+    expect(() =>
+      readWhatsAppConfig({ ANCHOR_WHATSAPP_EVE_SOCKET_URL: "http://127.0.0.1:2000" }),
+    ).toThrow("must use ws or wss");
+    expect(
+      readWhatsAppConfig({
+        ANCHOR_WHATSAPP_EVE_SOCKET_URL: "ws://127.0.0.1:2000/whatsapp/socket",
+      }).eveSocketUrl,
+    ).toBe("ws://127.0.0.1:2000/whatsapp/socket");
   });
 
   test("checks that saved credentials belong to the demo receiving account", () => {
@@ -103,7 +110,42 @@ describe("sender routing", () => {
       principalType: "user",
     });
     expect(normalizePhoneNumber("+91 70285-46994")).toBe(DEFAULT_WHATSAPP_ALLOWED_SENDER);
+    expect(isAllowedWhatsAppJid("917028546994@s.whatsapp.net")).toBe(true);
+    expect(isAllowedWhatsAppJid("919999999999@s.whatsapp.net")).toBe(false);
   });
+});
+
+test("validates the local bridge protocol in both directions", () => {
+  expect(
+    parseWhatsAppBridgeInbound({
+      kind: "message",
+      jid: "917028546994@s.whatsapp.net",
+      replyMode: "voice",
+      text: "Change one work order priority",
+    }),
+  ).toEqual({
+    kind: "message",
+    jid: "917028546994@s.whatsapp.net",
+    replyMode: "voice",
+    text: "Change one work order priority",
+  });
+  expect(parseWhatsAppBridgeInbound({ kind: "message", text: "missing fields" })).toBeNull();
+  expect(
+    parseWhatsAppBridgeOutbound({
+      kind: "presence",
+      jid: "917028546994@s.whatsapp.net",
+      state: "composing",
+    }),
+  ).toEqual({
+    kind: "presence",
+    jid: "917028546994@s.whatsapp.net",
+    state: "composing",
+  });
+  expect(parseWhatsAppBridgeOutbound({ kind: "voice", jid: "sender", text: "" })).toBeNull();
+  expect(whatsappSocketUrlFromEveRegistry({ origin: "http://127.0.0.1:61439" })).toBe(
+    "ws://127.0.0.1:61439/whatsapp/socket",
+  );
+  expect(whatsappSocketUrlFromEveRegistry({ origin: "https://example.com" })).toBeNull();
 });
 
 test("browser preflight admits only the on state", () => {

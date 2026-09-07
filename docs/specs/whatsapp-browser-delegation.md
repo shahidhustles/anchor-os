@@ -8,8 +8,8 @@ This is a one-user prototype for tomorrow's demo, not a general WhatsApp integra
 
 ## User flow
 
-1. The operator starts PlantOps on port 3100, enables Anchor OS browser control, and starts Anchor OS in its explicit WhatsApp mode.
-2. The receiving WhatsApp account, `+91 7276411669`, connects through its saved Baileys credentials or a QR scan.
+1. The operator starts PlantOps on port 3100, enables Anchor OS browser control, and runs `bun run dev` from `apps/web` to start the web app and Eve.
+2. When WhatsApp is needed, the operator separately runs `bun run dev:whatsapp` from the repository root. The receiving account, `+91 7276411669`, connects through its saved Baileys credentials or a QR scan.
 3. The approved sender, `+91 7028546994`, sends a text or voice note asking Anchor OS to review all work orders and change the priority of any eligible one.
 4. Anchor OS accepts only that sender. Eve creates or resumes the session bound to the sender's direct-message conversation. The session receives its normal microsandbox workspace and the existing browser-control connection.
 5. Eve opens `http://localhost:3100`, reviews the visible work-order list, chooses a work order whose priority is not already `High`, and changes it to `High` through visible controls.
@@ -20,9 +20,10 @@ This is a one-user prototype for tomorrow's demo, not a general WhatsApp integra
 
 ## Requirements
 
-- Use a custom Eve channel backed by Baileys. Keep the long-lived WhatsApp socket inside the Anchor OS process.
-- Start WhatsApp only when `ANCHOR_WHATSAPP_ENABLED=1`. Normal `bun dev`, builds, tests, and agent commands must not open a socket, read WhatsApp credentials, print a QR, or schedule reconnects.
-- Add a separate `bun run dev:whatsapp` command. It starts Eve on port 2000, then starts the web app on port 3000 with `EVE_BASE_URL` pointing to that Eve process. It is mutually exclusive with `bun dev` because both commands own the web server on port 3000.
+- Use a custom Eve channel plus a standalone Baileys adapter. Eve owns durable sessions and workspaces; the adapter owns the long-lived WhatsApp socket, QR, credentials, media, and delivery.
+- `bun run dev` from `apps/web` keeps its existing behavior: Next.js starts the colocated Eve development server without opening WhatsApp or printing a QR.
+- `bun run dev:whatsapp` starts only the standalone adapter. It discovers the Eve process recorded by `withEve`, connects over a loopback WebSocket, and can run or restart independently of the web app.
+- If Eve restarts on a different development port while the WhatsApp adapter remains running, the adapter rediscovers it, reconnects, and flushes accepted messages in arrival order.
 - Accept direct messages only from the normalized E.164 sender `917028546994`. Ignore groups, broadcasts, history-sync events, self echoes, stickers, and every other sender without invoking Eve.
 - Treat `917276411669` as the receiving account. Baileys establishes that identity through the linked-account credentials and QR flow. Do not treat the receiving number as an inbound allowlist entry.
 - Map the approved WhatsApp conversation to one Eve continuation address. Use `turnPolicy: "queue"` so messages finish in arrival order.
@@ -34,19 +35,19 @@ This is a one-user prototype for tomorrow's demo, not a general WhatsApp integra
 - Support inbound WhatsApp voice notes with Deepgram transcription. Send Eve the transcript as text.
 - Reply to a voice-note request with Cartesia speech converted to WhatsApp-compatible Ogg/Opus. Fall back to the final text response if Cartesia or audio conversion fails. If transcription fails, send a clear error and ask for text rather than sending unsupported audio to the selected model.
 - Store Baileys credentials locally in an ignored configurable directory. Never commit credentials, API keys, raw QR data, phone-session secrets, or credential backups.
-- Reconnect after recoverable socket failures. Stay disconnected after logout or connection replacement. Reuse one socket and one inbound listener across development reloads.
+- Reconnect Baileys after recoverable socket failures and stay disconnected after logout or connection replacement. Reconnect the local Eve bridge whenever Eve restarts.
 - Send a concise failure message when Eve, transcription, or delivery fails. Do not expose stack traces or provider details to WhatsApp.
 - The PlantOps demo at port 3100 must expose a visible control for changing an existing work order's priority and persist the change in its existing local-storage state. There must be no hidden API or MCP shortcut for this action.
 
 ## Implementation decisions
 
-- Add the channel directly under `packages/agent/agent/channels/whatsapp.ts`. A reusable Eve extension package would add work without helping this single-agent prototype.
-- In WhatsApp mode, run the explicit Eve process before Next.js. The custom `/whatsapp/bootstrap` route lives on Eve and is not part of the `/eve/v1/**` routes that `withEve` proxies through Next.js.
+- Keep Eve's channel under `packages/agent/agent/channels/whatsapp.ts` and the process-owning adapter at `packages/agent/whatsapp-server.ts`.
+- Let `withEve` keep managing the local Eve process and its development port. The adapter reads Eve's local development-server registry and connects directly to `/whatsapp/socket`; an explicit socket URL remains available as an override.
 - Adapt the transport, queueing, voice, QR, HITL, and delivery code from `/Users/shahidpatel/codes/hackathons/eve-wa-adapter/agent/channels/whatsapp.ts`. Do not copy its Eve 0.40 typings unchanged. Follow the bundled Eve 0.52.2 custom-channel contract in `packages/agent/node_modules/eve/docs/channels/custom.mdx`.
 - Use the normalized WhatsApp JID as the Eve continuation address. `from(jid).send(...)` creates the first durable session and resumes it on later messages. Use `from(jid).reset(...)` for `/reset`.
 - Dispatch each accepted turn with a user principal such as `authenticator: "whatsapp-demo"`, `principalType: "user"`, and a stable principal ID derived from the approved sender. Set `anchorOsBrowserControl: "on"` in its attributes so `packages/agent/agent/connections/browser.ts` can reuse the current authorization path.
 - Check the existing browser-control status endpoint before dispatch. The dynamic connection must still perform its own status check when the turn starts.
-- Keep WhatsApp configuration in environment variables. At minimum this includes the enable flag, allowed sender, credential directory, Deepgram key, Cartesia key, and Cartesia voice ID. Commit safe examples only.
+- Keep WhatsApp configuration in environment variables. At minimum this includes the allowed sender, receiving number, credential directory, Eve socket URL, Deepgram key, Cartesia key, and Cartesia voice ID. Commit safe examples only.
 - Add Baileys, Deepgram, Cartesia, QR rendering, and audio-conversion dependencies to `packages/agent`. Keep provider clients and FFmpeg work out of the web UI.
 - Add the smallest priority-edit control to the existing PlantOps work-order detail flow. Reuse its store validation and local-storage persistence instead of introducing server state.
 - Do not create a Supabase chat row for a WhatsApp session. WhatsApp-created chats will not appear in the Anchor OS web sidebar in this prototype.
@@ -54,8 +55,9 @@ This is a one-user prototype for tomorrow's demo, not a general WhatsApp integra
 
 ## Demo / acceptance
 
-- [ ] `bun dev` starts Anchor OS without touching WhatsApp or printing a QR.
-- [ ] `bun run dev:whatsapp` starts Anchor OS with one Baileys socket and connects the receiving account `+91 7276411669`.
+- [ ] `bun run dev` from `apps/web` starts the web app and Eve without touching WhatsApp or printing a QR.
+- [ ] `bun run dev:whatsapp` starts only one Baileys adapter and connects the receiving account `+91 7276411669` to the running Eve process.
+- [ ] Restarting Eve, including on a different development port, does not require restarting WhatsApp; the adapter rediscovers it and reconnects.
 - [ ] A message from any sender other than `+91 7028546994` is ignored and creates no Eve session.
 - [ ] A text message from `+91 7028546994` creates one Eve session with a microsandbox workspace and receives a final text reply.
 - [ ] A second message from the approved sender resumes the same Eve session and workspace.

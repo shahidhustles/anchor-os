@@ -46,6 +46,7 @@ export async function transcribeWhatsAppVoiceNote(
     { data: audio, contentType: mediaType },
     { model: DEEPGRAM_MODEL, punctuate: true, smart_format: true },
   );
+  if (!("results" in response)) return "";
   return response.results.channels?.[0]?.alternatives?.[0]?.transcript?.trim() ?? "";
 }
 
