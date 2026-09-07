@@ -1,10 +1,6 @@
 import { defineAgent, defineDynamic } from "eve";
 
-import {
-  createOpenCodeModel,
-  OPENCODE_CONTEXT_WINDOW_TOKENS,
-  OPENCODE_MODEL_OPTIONS,
-} from "./lib/opencode-model";
+import { createOpenCodeModelSelection, isOpenCodeModelId } from "./lib/opencode-model";
 import { resolveModelId } from "./lib/model-selection";
 import { createQwenModel, qwenContextWindowTokens } from "./lib/qwen-model";
 import { ANCHOR_MODEL_AUTH_ATTRIBUTE, ANCHOR_MODEL_IDS } from "../model-catalog";
@@ -28,13 +24,13 @@ export default defineAgent({
           };
         }
 
-        return {
-          model: createOpenCodeModel(context.session.id),
-          modelContextWindowTokens: OPENCODE_CONTEXT_WINDOW_TOKENS,
-          modelOptions: OPENCODE_MODEL_OPTIONS,
-        };
+        if (isOpenCodeModelId(modelId)) {
+          return createOpenCodeModelSelection(context.session.id, modelId);
+        }
+
+        const _exhaustive: never = modelId;
+        return _exhaustive;
       },
     },
   }),
-  reasoning: "xhigh",
 });

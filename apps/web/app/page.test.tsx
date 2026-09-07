@@ -8,7 +8,7 @@ import Home, { isReusableDraftChat, missingPendingMessages, shouldResumeChat } f
 const THREAD = {
   id: "3f9d1c9e-8b7a-4c2d-9e1f-0a2b3c4d5e6f",
   title: "New chat",
-  modelId: "muse-spark-1.3-contributor" as const,
+  modelId: "muse-spark-1.3-contributor-free" as const,
   eveSessionId: null,
   eveStreamIndex: 0,
   lastMessageAt: null,

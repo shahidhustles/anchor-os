@@ -58,14 +58,22 @@ const inFlightBySession = new Map<string, Promise<void>>();
 
 export default defineHook({
   events: {
-    async "message.completed"(_event, ctx) {
-      await enqueueScan(ctx.session.id, () => ctx.getSandbox());
-    },
-    async "turn.completed"(_event, ctx) {
+    async "action.result"(event, ctx) {
+      if (!isArtifactWritingResult(event.data.result)) return;
       await enqueueScan(ctx.session.id, () => ctx.getSandbox());
     },
   },
 });
+
+export function isArtifactWritingResult(result: {
+  readonly kind: string;
+  readonly toolName?: string;
+}): boolean {
+  return (
+    result.kind === "tool-result" &&
+    (result.toolName === "bash" || result.toolName === "write_file")
+  );
+}
 
 function enqueueScan(sessionId: string, getSandbox: () => Promise<ArtifactSandbox>): Promise<void> {
   const previous = inFlightBySession.get(sessionId) ?? Promise.resolve();

@@ -15,7 +15,7 @@ import {
 const THREAD_JSON = {
   id: "3f9d1c9e-8b7a-4c2d-9e1f-0a2b3c4d5e6f",
   title: "New chat",
-  modelId: "muse-spark-1.3-contributor",
+  modelId: "muse-spark-1.3-contributor-free",
   eveSessionId: null,
   eveStreamIndex: 0,
   lastMessageAt: null,
@@ -70,7 +70,7 @@ test("listChats parses a thread list", async () => {
     async () => {
       const threads = await listChats();
       assert.equal(threads.length, 1);
-      assert.equal(threads[0]?.modelId, "muse-spark-1.3-contributor");
+      assert.equal(threads[0]?.modelId, "muse-spark-1.3-contributor-free");
     },
   );
 });

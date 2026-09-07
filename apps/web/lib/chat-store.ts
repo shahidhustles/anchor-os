@@ -1,5 +1,4 @@
-import type { AnchorModelId } from "@anchor-os/agent/model-catalog";
-import { isAnchorModelId } from "@anchor-os/agent/model-catalog";
+import { normalizeAnchorModelId, type AnchorModelId } from "@anchor-os/agent/model-catalog";
 import {
   DEMO_USER_ID,
   ChatValidationError,
@@ -289,10 +288,11 @@ function toChatThread(row: ChatThreadRow): ChatThread {
 }
 
 function toAnchorModelId(value: string): AnchorModelId {
-  if (!isAnchorModelId(value)) {
+  const modelId = normalizeAnchorModelId(value);
+  if (modelId === undefined) {
     throw new ChatStoreError(`stored model id "${value}" is not a known anchor model`, 500);
   }
-  return value;
+  return modelId;
 }
 
 function chatStoreError(action: string, cause: unknown): ChatStoreError {
