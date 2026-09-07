@@ -7,7 +7,7 @@
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
-    "test": "bun test app/page.test.tsx lib/artifact-utils.test.ts lib/browser-control-client.test.ts lib/chat-client.test.ts lib/chat-sanitizer.test.ts lib/inspection-report-attachment.test.ts lib/sheet-html.test.ts",
+    "test": "bun test app/page.test.tsx components/anchor-os/tool-ui.test.tsx lib/artifact-utils.test.ts lib/browser-control-client.test.ts lib/chat-client.test.ts lib/chat-sanitizer.test.ts lib/inspection-report-attachment.test.ts lib/sheet-html.test.ts",
     "lint": "oxlint && oxfmt --check",
     "typecheck": "tsc --noEmit",
     "lint:fix": "oxlint --fix && oxfmt",

@@ -1,6 +1,7 @@
 "use client";
 
 import { ArtifactCard } from "@/components/anchor-os/artifact-card.aui";
+import { TodoPanel } from "@/components/anchor-os/todo-toolkit";
 import {
   ComposerAddAttachment,
   ComposerAttachments,
@@ -221,6 +222,7 @@ const ThreadRoot: FC<{
           >
             <ThreadScrollToBottom />
             <ThreadFollowupSuggestions />
+            <TodoPanel />
             <Composer autoFocus={autoFocus} modelPicker={modelPicker} />
             <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
               <ThreadSuggestions />

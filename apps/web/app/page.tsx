@@ -4,6 +4,7 @@ import { askQuestionToolkit } from "@/components/anchor-os/ask-question-toolkit"
 import { ArtifactWorkspace } from "@/components/anchor-os/artifact-panel";
 import { ArtifactsProvider } from "@/components/anchor-os/artifacts-context";
 import { inspectionReportToolkit } from "@/components/anchor-os/inspection-report-toolkit";
+import { todoToolkit } from "@/components/anchor-os/todo-toolkit";
 import { BrowserControlToggle } from "@/components/anchor-os/browser-control-toggle";
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
 import { Button } from "@/components/ui/button";
@@ -68,7 +69,11 @@ const MODEL_OPTIONS: readonly ModelOption[] = ANCHOR_MODELS.map((model) => ({
   id: model.id,
   name: model.label,
 }));
-const ANCHOR_TOOLKIT = defineToolkit({ ...askQuestionToolkit, ...inspectionReportToolkit });
+const ANCHOR_TOOLKIT = defineToolkit({
+  ...askQuestionToolkit,
+  ...inspectionReportToolkit,
+  ...todoToolkit,
+});
 
 function toChat(thread: ChatThread, history?: LoadedChat): Chat {
   return {

@@ -12,7 +12,8 @@ import {
 type QuestionOption = {
   readonly id: string;
   readonly label: string;
-  readonly kind: string;
+  readonly kind?: string;
+  readonly description?: string;
 };
 
 type AskQuestionArgs = {
@@ -38,8 +39,9 @@ function readQuestion(
       id: option.id,
       label: option.label ?? option.id,
       kind: option.kind,
+      ...(option.description ? { description: option.description } : {}),
     })) ??
-    args.options?.map((option) => ({ ...option, kind: "_custom" })) ??
+    args.options?.map((option) => ({ ...option, kind: option.kind ?? "_custom" })) ??
     [];
   return {
     prompt: approval?.prompt ?? args.prompt ?? "",
@@ -61,15 +63,18 @@ function answeredText(
     return question.options.find((option) => option.id === approval.optionId)?.label ?? null;
   }
   if (typeof result === "string" && result.trim() !== "") return result;
-  if (typeof result === "object" && result !== null) {
-    const candidate = result as { text?: unknown; answer?: unknown };
-    if (typeof candidate.text === "string") return candidate.text;
-    if (typeof candidate.answer === "string") return candidate.answer;
+  if (isRecord(result)) {
+    if (typeof result.text === "string") return result.text;
+    if (typeof result.answer === "string") return result.answer;
   }
   return null;
 }
 
-function AskQuestionCard({
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function AskQuestionCard({
   args,
   approval,
   respondToApproval,
@@ -79,6 +84,7 @@ function AskQuestionCard({
   const [textValue, setTextValue] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const question = readQuestion(args, approval);
   const isRequest =
@@ -97,6 +103,7 @@ function AskQuestionCard({
         fields={[{ name: "answer", label: "Answer", value: answer, kind: "text" }]}
         state="accepted"
         settledLabel="Answered"
+        className="-mx-2 w-auto"
       />
     );
   }
@@ -105,35 +112,42 @@ function AskQuestionCard({
 
   const answer = async (response: ToolApprovalResponse) => {
     setError(null);
+    setSubmitting(true);
     try {
       await respondToApproval(response);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const submit = () => {
+    if (submitting) return;
     const text = textValue.trim();
     if (text !== "") return void answer({ text });
     if (selectedId !== null) {
       const selected = question.options.find((option) => option.id === selectedId);
       // Custom-kind options (eve's ask_question uses `_` kinds) require an
       // explicit approved value; picking a declared option is an answer.
-      const approved = selected !== undefined && !REJECT_KINDS.has(selected.kind);
+      const approved = selected !== undefined && !REJECT_KINDS.has(selected.kind ?? "_custom");
       return void answer({ optionId: selectedId, approved });
     }
     setError("Pick an option or type an answer first.");
   };
 
-  const labelOf = (id: string) => question.options.find((option) => option.id === id)?.label;
   const fields: ElicitationField[] = [];
   if (question.options.length > 0) {
     fields.push({
       name: "option",
       label: "Choose one",
-      value: selectedId !== null ? (labelOf(selectedId) ?? "") : "",
+      value: selectedId ?? "",
       kind: "choice",
-      options: question.options.map((option) => option.label),
+      options: question.options.map((option) => ({
+        value: option.id,
+        label: option.label,
+        ...(option.description ? { description: option.description } : {}),
+      })),
     });
   }
   if (question.allowFreeform) {
@@ -142,20 +156,23 @@ function AskQuestionCard({
       label: question.options.length > 0 ? "Or type your own" : "Your answer",
       value: textValue,
       kind: "text",
+      placeholder: "Type your answer",
     });
   }
 
   return (
-    <div className="w-full max-w-sm">
+    <div className="-mx-2 w-auto">
       <ElicitationForm
         server="Anchor OS"
         message={question.prompt}
         fields={fields}
         state="request"
         hideDecline
+        busy={submitting}
         onFieldChange={(name, value) => {
+          setError(null);
           if (name === "option") {
-            setSelectedId(question.options.find((option) => option.label === value)?.id ?? null);
+            setSelectedId(question.options.some((option) => option.id === value) ? value : null);
             return;
           }
           setTextValue(value);
@@ -163,7 +180,10 @@ function AskQuestionCard({
         onAccept={submit}
       />
       {error !== null && (
-        <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">
+        <p
+          role="alert"
+          className="bg-destructive/10 text-destructive mt-2 rounded-xl px-3 py-2 text-sm"
+        >
           {error}
         </p>
       )}
