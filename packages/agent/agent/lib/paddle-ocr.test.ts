@@ -102,7 +102,7 @@ test("posts the whole PDF with fileType 0 and returns ordered typed pages", asyn
     file: PDF_BASE64,
     fileType: 0,
     returnMarkdownImages: true,
-    restructurePages: true,
+    restructurePages: false,
     visualize: false,
   });
 

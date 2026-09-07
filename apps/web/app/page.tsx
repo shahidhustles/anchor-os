@@ -8,6 +8,7 @@ import { todoToolkit } from "@/components/anchor-os/todo-toolkit";
 import { BrowserControlToggle } from "@/components/anchor-os/browser-control-toggle";
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useChatPersistence } from "@/hooks/use-chat-persistence";
 import {
@@ -36,7 +37,7 @@ import {
   Tools,
   useAuiState,
 } from "@assistant-ui/react";
-import { Loader2Icon, MessageSquareIcon, PlusIcon, RotateCcwIcon, Trash2Icon } from "lucide-react";
+import { AnchorIcon, MessageSquareIcon, PlusIcon, RotateCcwIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelOption } from "@/components/assistant-ui/elements/model-selector";
 import {
@@ -168,9 +169,9 @@ function PendingMessageRecovery({
   return (
     <div className="mx-4 mt-3 space-y-2" data-slot="pending-message-recovery">
       {pendingMessages.map((message) => (
-        <div key={message.id} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-          <p className="text-xs font-medium text-amber-900">Saved before the agent accepted it</p>
-          <p className="mt-1 whitespace-pre-wrap text-sm text-amber-950">
+        <div key={message.id} className="rounded-xl border border-warn/30 bg-warn/10 px-3 py-2">
+          <p className="text-xs font-medium text-warn">Saved before the agent accepted it</p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-foreground">
             {visibleMessageText(message.parts) || "Message content is unavailable."}
           </p>
         </div>
@@ -352,7 +353,7 @@ function ChatPane({
                   {resuming ? (
                     <p
                       role="status"
-                      className="px-4 pt-3 text-center text-sm text-zinc-500"
+                      className="px-4 pt-3 text-center text-sm text-muted-foreground"
                       data-slot="chat-resuming"
                     >
                       Restoring this chat's workspace…
@@ -361,7 +362,7 @@ function ChatPane({
                   {resumeFailed ? (
                     <p
                       role="alert"
-                      className="mx-4 mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                      className="mx-4 mt-3 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                       data-slot="chat-resume-error"
                     >
                       This workspace is unavailable. The saved transcript is still here, but this
@@ -371,7 +372,7 @@ function ChatPane({
                   {chat.persistenceError ? (
                     <p
                       role="alert"
-                      className="mx-4 mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                      className="mx-4 mt-3 rounded-xl border border-warn/30 bg-warn/10 px-3 py-2 text-sm text-warn"
                       data-slot="chat-persistence-error"
                     >
                       {chat.persistenceError}
@@ -406,6 +407,23 @@ type PaneNoticeProps = {
   readonly "data-slot": string;
 };
 
+function WorkspaceSkeleton() {
+  return (
+    <div className="mx-auto flex h-full w-full max-w-[44rem] flex-col justify-center gap-y-6 px-4 pt-4">
+      <Skeleton className="ml-auto h-9 w-2/5 rounded-xl motion-reduce:animate-none" />
+      <div className="flex flex-col gap-y-2">
+        <Skeleton className="h-4 w-11/12 motion-reduce:animate-none" />
+        <Skeleton className="h-4 w-4/5 motion-reduce:animate-none" />
+        <Skeleton className="h-4 w-3/5 motion-reduce:animate-none" />
+      </div>
+      <div className="flex flex-col gap-y-2">
+        <Skeleton className="h-4 w-10/12 motion-reduce:animate-none" />
+        <Skeleton className="h-4 w-2/3 motion-reduce:animate-none" />
+      </div>
+    </div>
+  );
+}
+
 function PaneNotice({
   title,
   description,
@@ -418,8 +436,8 @@ function PaneNotice({
       className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
       data-slot={dataSlot}
     >
-      <p className="text-sm font-medium text-zinc-950">{title}</p>
-      <p className="max-w-sm text-sm text-zinc-500">{description}</p>
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="max-w-sm text-sm text-muted-foreground">{description}</p>
       <Button type="button" variant="outline" size="sm" onClick={onAction}>
         <RotateCcwIcon className="size-3.5" />
         {actionLabel}
@@ -596,12 +614,12 @@ export default function Home() {
 
   return (
     <TooltipProvider>
-      <main className="flex h-dvh overflow-hidden bg-white text-zinc-950">
-        <aside className="flex w-64 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50/80">
-          <div className="flex h-14 items-center justify-between border-b border-zinc-200 px-3">
-            <div className="flex items-center gap-2 px-2 text-sm font-semibold">
-              <span className="flex size-7 items-center justify-center rounded-lg bg-zinc-950 text-xs font-bold text-white">
-                A
+      <main className="flex h-dvh overflow-hidden bg-background text-foreground">
+        <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-secondary/40">
+          <div className="flex h-14 items-center justify-between border-b border-border px-3">
+            <div className="flex items-center gap-2.5 px-2 text-sm font-semibold tracking-tight">
+              <span className="rounded-sm flex size-7 items-center justify-center bg-primary text-primary-foreground shadow-lagoon">
+                <AnchorIcon className="size-4" strokeWidth={2.25} />
               </span>
               Anchor OS
             </div>
@@ -622,30 +640,33 @@ export default function Home() {
           {createFailed ? (
             <p
               role="alert"
-              className="px-4 py-2 text-xs text-red-600"
+              className="px-4 py-2 text-xs text-destructive"
               data-slot="chat-create-error"
             >
               Could not create the chat. Try again.
             </p>
           ) : null}
           {controlSaveError ? (
-            <p role="alert" className="px-4 py-2 text-xs text-red-600" data-slot="chat-save-error">
+            <p
+              role="alert"
+              className="px-4 py-2 text-xs text-destructive"
+              data-slot="chat-save-error"
+            >
               {controlSaveError}
             </p>
           ) : null}
 
           <nav className="flex-1 overflow-y-auto p-2" aria-label="Chats">
             {loadState === "loading" ? (
-              <div
-                className="flex items-center gap-2 px-2 py-2 text-xs text-zinc-500"
-                data-slot="chat-list-loading"
-              >
-                <Loader2Icon className="size-3.5 animate-spin" aria-hidden />
-                Loading chats…
+              <div className="space-y-1 px-1 py-2" data-slot="chat-list-loading">
+                <span className="sr-only">Loading chats…</span>
+                <Skeleton className="ml-1 h-8 w-4/5 rounded-lg motion-reduce:animate-none" />
+                <Skeleton className="ml-1 h-8 w-3/5 rounded-lg motion-reduce:animate-none" />
+                <Skeleton className="ml-1 h-8 w-11/12 rounded-lg motion-reduce:animate-none" />
               </div>
             ) : loadState === "error" ? (
               <div className="px-2 py-2" data-slot="chat-list-error">
-                <p className="text-xs text-red-600">Chats could not be loaded.</p>
+                <p className="text-xs text-destructive">Chats could not be loaded.</p>
                 <Button
                   type="button"
                   variant="outline"
@@ -665,8 +686,8 @@ export default function Home() {
                 {chats.map((chat) => (
                   <div
                     key={chat.id}
-                    className={`group flex items-center rounded-lg ${
-                      selectedChatId === chat.id ? "bg-zinc-200/70" : "hover:bg-zinc-100"
+                    className={`group flex items-center rounded-xl transition-colors ${
+                      selectedChatId === chat.id ? "bg-accent" : "hover:bg-accent/50"
                     }`}
                   >
                     <button
@@ -676,12 +697,9 @@ export default function Home() {
                       aria-current={selectedChatId === chat.id ? "page" : undefined}
                     >
                       {chat.status === "running" ? (
-                        <span
-                          className="size-2 shrink-0 animate-pulse rounded-full bg-emerald-500"
-                          aria-label="Working"
-                        />
+                        <span className="tide-dot shrink-0" aria-label="Working" />
                       ) : (
-                        <MessageSquareIcon className="size-4 shrink-0 text-zinc-500" />
+                        <MessageSquareIcon className="size-4 shrink-0 text-muted-foreground" />
                       )}
                       <span className="truncate">{chat.title}</span>
                     </button>
@@ -689,7 +707,7 @@ export default function Home() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="mr-1 size-7 shrink-0 text-zinc-500 opacity-0 hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
+                      className="mr-1 size-7 shrink-0 text-muted-foreground opacity-0 hover:text-destructive focus:opacity-100 group-hover:opacity-100"
                       onClick={() => deleteChat(chat.id)}
                       disabled={chat.archiving}
                       aria-label={`Delete ${chat.title}`}
@@ -703,12 +721,13 @@ export default function Home() {
             )}
           </nav>
           <BrowserControlToggle onReadyChange={setBrowserReady} />
-          <p className="border-t border-zinc-200 px-4 py-3 text-xs text-zinc-500">
+          <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
             Chats are saved and return after reload.
           </p>
         </aside>
 
-        <section className="min-w-0 flex-1 bg-white">
+        <section className="min-w-0 flex-1 bg-background">
+          {loadState === "loading" ? <WorkspaceSkeleton /> : null}
           {chats.map((chat) => (
             <ChatPane
               key={chat.id}

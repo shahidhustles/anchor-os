@@ -99,7 +99,7 @@ export async function parsePaddleOcrPdf(
         file: fileBase64,
         fileType: 0,
         returnMarkdownImages: true,
-        restructurePages: true,
+        restructurePages: false,
         visualize: false,
       }),
       signal,

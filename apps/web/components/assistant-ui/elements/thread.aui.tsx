@@ -53,6 +53,7 @@ import {
   useAuiState,
 } from "@assistant-ui/react";
 import {
+  AnchorIcon,
   ArrowDownIcon,
   ArrowUpIcon,
   CheckIcon,
@@ -263,7 +264,14 @@ const ThreadScrollToBottom: FC = () => {
 
 const ThreadWelcome: FC = () => {
   return (
-    <div className="aui-thread-welcome-root mb-6 flex flex-col items-center px-4 text-center">
+    <div className="aui-thread-welcome-root relative mb-6 flex flex-col items-center px-4 text-center">
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-20 left-1/2 h-56 w-[32rem] -translate-x-1/2 rounded-full bg-[radial-gradient(closest-side,oklch(0.8_0.09_190/0.16),transparent),radial-gradient(70%_70%_at_78%_18%,oklch(0.85_0.09_80/0.1),transparent)]"
+      />
+      <span className="relative mb-5 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lagoon">
+        <AnchorIcon className="size-7" strokeWidth={2} />
+      </span>
       <h1 className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-medium tracking-tight duration-200">
         How can I help you today?
       </h1>
@@ -306,7 +314,7 @@ const Composer: FC<{ autoFocus: boolean; modelPicker?: ThreadModelPicker | undef
     <ComposerPrimitive.Root className="aui-composer-root relative flex w-full flex-col">
       <div
         data-slot="aui_composer-shell"
-        className="border-border/60 focus-within:border-border flex w-full cursor-text flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) transition-[border-color]"
+        className="border-border/60 focus-within:border-ring flex w-full cursor-text flex-col gap-2 rounded-(--composer-radius) border bg-(--composer-bg) p-(--composer-padding) shadow-[0_1px_2px_oklch(0.24_0.025_215/0.05)] transition-[border-color]"
       >
         <ComposerAttachments />
         <ComposerPrimitive.Input
@@ -511,7 +519,7 @@ const AssistantMessage: FC = () => {
                 return (
                   <span
                     data-slot="aui_assistant-message-indicator"
-                    className="animate-pulse font-sans"
+                    className="animate-pulse font-sans text-tide"
                     aria-label="Assistant is working"
                   >
                     {"●"}
@@ -541,7 +549,7 @@ const AssistantActionBar: FC = () => {
     <ActionBarPrimitive.Root
       hideWhenRunning
       autohide="not-last"
-      className="aui-assistant-action-bar-root text-muted-foreground animate-in fade-in col-start-3 row-start-2 -ms-1 flex gap-1 duration-200"
+      className="aui-assistant-action-bar-root text-muted-foreground animate-in fade-in -ms-1 flex gap-1 duration-200"
     >
       <ActionBarPrimitive.Copy render={<TooltipIconButton tooltip="Copy" />}>
         <AuiIf condition={(s) => s.message.isCopied}>

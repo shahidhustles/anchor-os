@@ -4,7 +4,7 @@ import type { ComponentProps } from "react";
 import { CheckIcon, MessageCircleQuestionIcon, XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
-import { field, inkButton, paper } from "@/lib/surfaces";
+import { field, paper } from "@/lib/surfaces";
 
 export type ElicitationState = "request" | "accepted" | "declined";
 
@@ -204,8 +204,7 @@ export function ElicitationForm({
               onClick={onAccept}
               disabled={busy}
               className={cn(
-                inkButton,
-                "flex h-8 items-center rounded-full px-3.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-60",
+                "bg-primary text-primary-foreground hover:bg-primary/90 flex h-8 items-center rounded-full px-3.5 text-xs font-medium transition-[background-color,scale] duration-150 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-60",
               )}
             >
               {busy ? "Sending..." : "Send"}
@@ -218,7 +217,7 @@ export function ElicitationForm({
           >
             {state === "accepted" ? (
               <>
-                <CheckIcon className="size-3.5 text-emerald-500" />
+                <CheckIcon className="text-ok size-3.5" />
                 {settledLabel ?? `Sent to ${server}`}
               </>
             ) : (

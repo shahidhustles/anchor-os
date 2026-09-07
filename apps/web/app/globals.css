@@ -22,6 +22,17 @@
       height: 0;
     }
   }
+  @keyframes tide-breathe {
+    0%,
+    100% {
+      opacity: 0.55;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.35);
+    }
+  }
 }
 
 @theme inline {
@@ -31,6 +42,8 @@
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: 1.5rem;
+  --font-sans: var(--font-outfit);
+  --font-mono: var(--font-geist-mono);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -46,9 +59,13 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-tide: var(--tide);
+  --color-sun: var(--sun);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -62,41 +79,49 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --shadow-lagoon:
+    0 1px 2px oklch(0.44 0.1 198 / 0.08), 0 8px 24px -12px oklch(0.44 0.1 198 / 0.28);
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.141 0.005 285.823);
-  --sidebar-primary: oklch(0.21 0.006 285.885);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.967 0.001 286.375);
-  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.705 0.015 286.067);
+  --radius: 0.875rem;
+
+  /* Lagoon — sea-slate ink over a near-white, sea-tinted canvas. */
+  --background: oklch(0.986 0.004 155);
+  --foreground: oklch(0.24 0.025 215);
+  --card: oklch(0.996 0.002 160);
+  --card-foreground: oklch(0.24 0.025 215);
+  --popover: oklch(0.997 0.002 160);
+  --popover-foreground: oklch(0.24 0.025 215);
+  --primary: oklch(0.44 0.1 198);
+  --primary-foreground: oklch(0.985 0.004 155);
+  --secondary: oklch(0.95 0.012 135);
+  --secondary-foreground: oklch(0.24 0.025 215);
+  --muted: oklch(0.95 0.012 135);
+  --muted-foreground: oklch(0.52 0.02 205);
+  --accent: oklch(0.945 0.02 175);
+  --accent-foreground: oklch(0.24 0.025 215);
+  --destructive: oklch(0.55 0.2 25);
+  --ok: oklch(0.55 0.12 160);
+  --warn: oklch(0.55 0.12 70);
+  --border: oklch(0.9 0.012 175);
+  --input: oklch(0.9 0.012 175);
+  --ring: oklch(0.6 0.1 195);
+  --tide: oklch(0.7 0.12 190);
+  --sun: oklch(0.74 0.15 55);
+  --chart-1: oklch(0.5 0.11 200);
+  --chart-2: oklch(0.72 0.12 190);
+  --chart-3: oklch(0.86 0.08 160);
+  --chart-4: oklch(0.8 0.12 85);
+  --chart-5: oklch(0.74 0.15 55);
+  --sidebar: oklch(0.976 0.006 155);
+  --sidebar-foreground: oklch(0.24 0.025 215);
+  --sidebar-primary: oklch(0.44 0.1 198);
+  --sidebar-primary-foreground: oklch(0.985 0.004 155);
+  --sidebar-accent: oklch(0.945 0.02 175);
+  --sidebar-accent-foreground: oklch(0.24 0.025 215);
+  --sidebar-border: oklch(0.9 0.012 175);
+  --sidebar-ring: oklch(0.6 0.1 195);
 }
 
 @layer base {
@@ -104,8 +129,39 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
     color-scheme: light;
+    background-image:
+      radial-gradient(120% 55% at 50% -8%, oklch(0.9 0.06 190 / 0.4), transparent 60%),
+      radial-gradient(85% 45% at 88% -6%, oklch(0.9 0.06 95 / 0.28), transparent 55%);
+    background-attachment: fixed;
+  }
+}
+
+/* The "working / live" tide dot — a soft breathing pulse, transform/opacity only. */
+.tide-dot {
+  position: relative;
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  background: var(--tide);
+}
+
+.tide-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--tide);
+  animation: tide-breathe 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tide-dot::after {
+    animation: none;
+    opacity: 0.35;
+    transform: scale(1.8);
   }
 }
 

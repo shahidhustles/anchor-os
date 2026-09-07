@@ -109,9 +109,7 @@ function parseTodoSnapshotKey(key: string): TodoSnapshot | undefined {
 function TodoStatusIcon({ status }: { readonly status: TodoStatus }) {
   switch (status) {
     case "completed":
-      return (
-        <CheckCircle2Icon className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-      );
+      return <CheckCircle2Icon className="text-ok size-4 shrink-0" />;
     case "cancelled":
       return <CircleXIcon className="text-muted-foreground size-4 shrink-0" />;
     case "in_progress":

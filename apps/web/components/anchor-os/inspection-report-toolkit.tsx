@@ -47,7 +47,7 @@ function InspectionReportCard({
       className={cn(
         "my-2 flex w-full max-w-md items-center gap-3 rounded-xl border px-3.5 py-3 text-sm",
         view.tone === "error"
-          ? "border-red-200 bg-red-50 text-red-800 dark:border-red-950 dark:bg-red-950/30 dark:text-red-300"
+          ? "border-destructive/30 bg-destructive/10 text-destructive"
           : "border-border/60 bg-muted/40 text-foreground",
       )}
     >
@@ -56,9 +56,9 @@ function InspectionReportCard({
         className={cn(
           "size-4 shrink-0",
           isActive && "animate-spin motion-reduce:animate-none",
-          view.tone === "complete" && "text-emerald-600 dark:text-emerald-400",
+          view.tone === "complete" && "text-ok",
           view.tone === "cancelled" && "text-muted-foreground",
-          view.tone === "error" && "text-red-600 dark:text-red-400",
+          view.tone === "error" && "text-destructive",
         )}
       />
       <div className="min-w-0 flex-1">
@@ -91,7 +91,7 @@ function RetryButton() {
       onClick={onRetry}
       disabled={!enabled}
       data-slot="inspection-report-retry"
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 disabled:pointer-events-none disabled:opacity-50 dark:border-red-950 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-950/70"
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-destructive/30 bg-card px-2.5 py-1.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 disabled:pointer-events-none disabled:opacity-50"
     >
       <RotateCwIcon aria-hidden="true" className="size-3.5" />
       Retry

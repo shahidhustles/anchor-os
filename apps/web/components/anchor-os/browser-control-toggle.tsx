@@ -77,10 +77,10 @@ export function BrowserControlToggle({ onReadyChange }: BrowserControlToggleProp
 
   return (
     <div
-      className="flex items-center justify-between gap-3 border-t border-zinc-200 px-4 py-3"
+      className="flex items-center justify-between gap-3 border-t border-border px-4 py-3"
       data-slot="browser-control"
     >
-      <span className="text-xs font-medium text-zinc-700">Browser control</span>
+      <span className="text-xs font-medium text-foreground">Browser control</span>
       <Tooltip>
         <TooltipTrigger
           render={
