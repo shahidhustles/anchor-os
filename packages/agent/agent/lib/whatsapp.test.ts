@@ -11,6 +11,7 @@ import {
   isExpectedWhatsAppReceiver,
   isResetCommand,
   enqueueWhatsAppTask,
+  formatWhatsAppQrForTerminal,
   markWhatsAppListenersAttached,
   isAllowedWhatsAppJid,
   normalizePhoneNumber,
@@ -146,6 +147,15 @@ test("validates the local bridge protocol in both directions", () => {
     "ws://127.0.0.1:61439/whatsapp/socket",
   );
   expect(whatsappSocketUrlFromEveRegistry({ origin: "https://example.com" })).toBeNull();
+});
+
+test("draws a multiline QR without newline-delimited rows that Codex can elide", () => {
+  const rendered = "row one\nrow two\nrow three\n";
+  const terminalOutput = formatWhatsAppQrForTerminal(rendered);
+
+  expect(terminalOutput.match(/\n/g)?.length).toBe(1);
+  expect(terminalOutput).toContain("row one\r\u001bDrow two\r\u001bDrow three");
+  expect(terminalOutput).toStartWith("\u001b[2J\u001b[3J\u001b[H");
 });
 
 test("browser preflight admits only the on state", () => {

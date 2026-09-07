@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import {
   disconnectStatusCode,
   enqueueWhatsAppTask,
+  formatWhatsAppQrForTerminal,
   isAllowedWhatsAppJid,
   isAllowedWhatsAppSender,
   isExpectedWhatsAppReceiver,
@@ -280,8 +281,11 @@ function attachSocketListeners(socket: WASocket): void {
     if (update.qr !== undefined) {
       void QRCode.toString(update.qr, { type: "terminal", small: true })
         .then((rendered) => {
-          console.info("[whatsapp] Scan this QR in WhatsApp under Linked devices.\n");
-          console.info(rendered);
+          process.stdout.write(
+            formatWhatsAppQrForTerminal(
+              `[whatsapp] Scan this QR in WhatsApp under Linked devices.\n\n${rendered}`,
+            ),
+          );
         })
         .catch((error: unknown) => {
           console.error("[whatsapp] could not render the login QR", error);

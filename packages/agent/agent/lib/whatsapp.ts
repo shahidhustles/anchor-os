@@ -171,6 +171,12 @@ export function splitWhatsAppText(text: string): string[] {
   return chunks;
 }
 
+export function formatWhatsAppQrForTerminal(renderedQr: string): string {
+  const rows = renderedQr.replaceAll("\r\n", "\n").split("\n");
+  while (rows.at(-1) === "") rows.pop();
+  return `\u001b[2J\u001b[3J\u001b[H${rows.join("\r\u001bD")}\n`;
+}
+
 export function renderWhatsAppInputRequest(input: {
   readonly prompt: string;
   readonly options?: readonly { readonly label: string }[];
