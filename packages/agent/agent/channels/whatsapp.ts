@@ -1,6 +1,7 @@
 import {
   Browsers,
   DisconnectReason,
+  downloadMediaMessage,
   getContentType,
   makeWASocket,
   normalizeMessageContent,
@@ -17,26 +18,43 @@ import {
   WHATSAPP_BROWSER_UNAVAILABLE_MESSAGE,
   canDispatchBrowserTask,
   disconnectStatusCode,
+  dropLastWhatsAppReplyMode,
+  enqueueWhatsAppTask,
   isAllowedWhatsAppSender,
   isExpectedWhatsAppReceiver,
   isResetCommand,
+  markWhatsAppListenersAttached,
+  queueWhatsAppReplyMode,
   readWhatsAppConfig,
   renderWhatsAppInputRequest,
+  resolveWhatsAppInputResponse,
   shouldDeliverAssistantMessage,
   shouldReconnectWhatsApp,
   splitWhatsAppText,
+  takeWhatsAppReplyMode,
   whatsappContinuationAddress,
   whatsappUserAuth,
   type WhatsAppConfig,
+  type WhatsAppPendingInput,
+  type WhatsAppReplyMode,
+  type WhatsAppSerialQueue,
 } from "../lib/whatsapp";
+import {
+  deliverWhatsAppVoiceOrText,
+  prepareWhatsAppVoiceMessage,
+  WHATSAPP_VOICE_TRANSCRIPTION_FAILURE_MESSAGE,
+  type PreparedVoiceMessage,
+} from "../lib/whatsapp-voice";
 
 type WhatsAppState = {
   jid: string;
+  voiceReply: boolean;
 };
 
 type QueuedMessage = {
   readonly jid: string;
   readonly text: string;
+  readonly replyMode: WhatsAppReplyMode;
 };
 
 type WhatsAppRuntime = {
@@ -47,6 +65,11 @@ type WhatsAppRuntime = {
   bootstrapTimer: ReturnType<typeof setTimeout> | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   failedSessions: Set<string>;
+  inboundQueue: WhatsAppSerialQueue;
+  listenerSockets: WeakSet<object>;
+  pendingInputs: Map<string, WhatsAppPendingInput[]>;
+  replyModes: Map<string, WhatsAppReplyMode[]>;
+  activeReplyModes: Map<string, WhatsAppReplyMode>;
   receiverVerified: boolean;
 };
 
@@ -62,7 +85,7 @@ declare global {
 const config = readWhatsAppConfig();
 
 function getRuntime(): WhatsAppRuntime {
-  globalThis.__anchorWhatsAppRuntime ??= {
+  const runtime = (globalThis.__anchorWhatsAppRuntime ??= {
     socket: null,
     starting: null,
     from: null,
@@ -70,9 +93,19 @@ function getRuntime(): WhatsAppRuntime {
     bootstrapTimer: null,
     reconnectTimer: null,
     failedSessions: new Set(),
+    inboundQueue: { tail: Promise.resolve() },
+    listenerSockets: new WeakSet(),
+    pendingInputs: new Map(),
+    replyModes: new Map(),
+    activeReplyModes: new Map(),
     receiverVerified: false,
-  };
-  return globalThis.__anchorWhatsAppRuntime;
+  });
+  runtime.inboundQueue ??= { tail: Promise.resolve() };
+  runtime.listenerSockets ??= new WeakSet();
+  runtime.pendingInputs ??= new Map();
+  runtime.replyModes ??= new Map();
+  runtime.activeReplyModes ??= new Map();
+  return runtime;
 }
 
 async function sendText(socket: WASocket, jid: string, text: string): Promise<void> {
@@ -96,10 +129,42 @@ async function dispatchMessage(runtime: WhatsAppRuntime, message: QueuedMessage)
     return;
   }
 
-  await runtime.from(message.jid).send(message.text, {
-    auth: whatsappUserAuth(message.jid),
-    state: { jid: message.jid },
-  });
+  queueWhatsAppReplyMode(runtime.replyModes, message.jid, message.replyMode);
+  try {
+    await runtime.from(message.jid).send(message.text, {
+      auth: whatsappUserAuth(message.jid),
+      state: { jid: message.jid, voiceReply: message.replyMode === "voice" },
+    });
+  } catch (error) {
+    dropLastWhatsAppReplyMode(runtime.replyModes, message.jid);
+    throw error;
+  }
+}
+
+async function tryRespondToPendingInput(
+  runtime: WhatsAppRuntime,
+  jid: string,
+  text: string,
+  socket: WASocket,
+): Promise<boolean> {
+  const pendingQueue = runtime.pendingInputs.get(jid);
+  const pending = pendingQueue?.[0];
+  if (pending === undefined || runtime.from === null) return false;
+
+  const resolution = resolveWhatsAppInputResponse(pending, text);
+  if (resolution.kind === "invalid-option") {
+    await sendText(
+      socket,
+      jid,
+      `Invalid choice. Reply with a number from 1 to ${resolution.optionCount}.`,
+    );
+    return true;
+  }
+
+  await runtime.from(jid).respond([resolution.response], { auth: whatsappUserAuth(jid) });
+  pendingQueue.shift();
+  if (pendingQueue.length === 0) runtime.pendingInputs.delete(jid);
+  return true;
 }
 
 async function handleInboundMessage(
@@ -122,7 +187,7 @@ async function handleInboundMessage(
       : type === "extendedTextMessage"
         ? content?.extendedTextMessage?.text
         : undefined;
-  if (text === undefined || text.trim() === "") return;
+  if (type !== "audioMessage" && (text === undefined || text.trim() === "")) return;
 
   const socket = runtime.socket;
   if (socket === null) return;
@@ -133,15 +198,20 @@ async function handleInboundMessage(
     // A read receipt is helpful but does not affect delivery.
   }
 
-  if (isResetCommand(text)) {
+  if (text !== undefined && isResetCommand(text)) {
     if (runtime.from === null) {
       await sendText(socket, jid, "WhatsApp is still starting. Try /reset again in a moment.");
       return;
     }
     await runtime.from(jid).reset({ reason: "User requested a fresh WhatsApp conversation" });
+    runtime.pendingInputs.delete(jid);
+    runtime.replyModes.delete(jid);
+    runtime.activeReplyModes.delete(jid);
     await sendText(socket, jid, "Conversation reset. Your next message starts a fresh workspace.");
     return;
   }
+
+  if (text !== undefined && (await tryRespondToPendingInput(runtime, jid, text, socket))) return;
 
   const browserStatus = await fetchBrowserControlStatus();
   if (!canDispatchBrowserTask(browserStatus)) {
@@ -150,7 +220,41 @@ async function handleInboundMessage(
   }
 
   await sendTyping(socket, jid, "composing");
-  await dispatchMessage(runtime, { jid, text });
+  if (type === "audioMessage") {
+    let prepared: PreparedVoiceMessage;
+    try {
+      const audio = await downloadMediaMessage(
+        message,
+        "buffer",
+        {},
+        {
+          logger: socket.logger,
+          reuploadRequest: socket.updateMediaMessage,
+        },
+      );
+      prepared = await prepareWhatsAppVoiceMessage(
+        audio,
+        content?.audioMessage?.mimetype ?? "audio/ogg",
+      );
+    } catch (error) {
+      console.error("[whatsapp] could not download the voice note", error);
+      await sendText(socket, jid, WHATSAPP_VOICE_TRANSCRIPTION_FAILURE_MESSAGE);
+      await sendTyping(socket, jid, "paused");
+      return;
+    }
+    if (prepared.kind !== "ready") {
+      if (prepared.kind === "failed") {
+        console.error("[whatsapp] could not transcribe the voice note", prepared.error);
+      }
+      await sendText(socket, jid, WHATSAPP_VOICE_TRANSCRIPTION_FAILURE_MESSAGE);
+      await sendTyping(socket, jid, "paused");
+      return;
+    }
+    await dispatchMessage(runtime, { jid, replyMode: "voice", text: prepared.text });
+    return;
+  }
+
+  await dispatchMessage(runtime, { jid, replyMode: "text", text: text ?? "" });
 }
 
 function attachSocketListeners(
@@ -158,18 +262,22 @@ function attachSocketListeners(
   socket: WASocket,
   enabledConfig: Extract<WhatsAppConfig, { enabled: true }>,
 ): void {
-  socket.ev.on("messages.upsert", async (event: BaileysEventMap["messages.upsert"]) => {
+  if (!markWhatsAppListenersAttached(runtime.listenerSockets, socket)) return;
+
+  socket.ev.on("messages.upsert", (event: BaileysEventMap["messages.upsert"]) => {
     if (event.type !== "notify") return;
     for (const message of event.messages) {
-      try {
-        await handleInboundMessage(runtime, message, enabledConfig.allowedSender);
-      } catch (error) {
-        console.error("[whatsapp] failed to process an inbound message", error);
-        const jid = whatsappContinuationAddress(message.key);
-        if (jid !== null && runtime.socket !== null) {
-          await sendText(runtime.socket, jid, "I could not start that task. Please try again.");
+      void enqueueWhatsAppTask(runtime.inboundQueue, async () => {
+        try {
+          await handleInboundMessage(runtime, message, enabledConfig.allowedSender);
+        } catch (error) {
+          console.error("[whatsapp] failed to process an inbound message", error);
+          const jid = whatsappContinuationAddress(message.key);
+          if (jid !== null && runtime.socket !== null) {
+            await sendText(runtime.socket, jid, "I could not start that task. Please try again.");
+          }
         }
-      }
+      });
     }
   });
 
@@ -275,7 +383,7 @@ function scheduleBootstrap(runtime: WhatsAppRuntime, delay = 1_000): void {
 const channel = defineChannel<WhatsAppState, WhatsAppChannelContext>({
   kindHint: "whatsapp",
   turnPolicy: "queue",
-  state: { jid: "" },
+  state: { jid: "", voiceReply: false },
   context(state) {
     return { state, socket: getRuntime().socket };
   },
@@ -303,6 +411,14 @@ const channel = defineChannel<WhatsAppState, WhatsAppChannelContext>({
   ],
   events: {
     async "turn.started"(_event, channelContext) {
+      if (channelContext.state.jid !== "") {
+        const mode = takeWhatsAppReplyMode(
+          getRuntime().replyModes,
+          channelContext.state.jid,
+          channelContext.state.voiceReply ? "voice" : "text",
+        );
+        getRuntime().activeReplyModes.set(channelContext.state.jid, mode);
+      }
       if (channelContext.socket !== null && channelContext.state.jid !== "") {
         await sendTyping(channelContext.socket, channelContext.state.jid, "composing");
       }
@@ -315,6 +431,14 @@ const channel = defineChannel<WhatsAppState, WhatsAppChannelContext>({
     async "input.requested"(event, channelContext) {
       if (channelContext.socket === null || channelContext.state.jid === "") return;
       for (const request of event.requests) {
+        const pendingQueue = getRuntime().pendingInputs.get(channelContext.state.jid) ?? [];
+        if (pendingQueue.some((pending) => pending.requestId === request.requestId)) continue;
+        pendingQueue.push({
+          allowFreeform: request.allowFreeform ?? request.options?.length === 0,
+          options: request.options ?? [],
+          requestId: request.requestId,
+        });
+        getRuntime().pendingInputs.set(channelContext.state.jid, pendingQueue);
         await sendText(
           channelContext.socket,
           channelContext.state.jid,
@@ -325,16 +449,43 @@ const channel = defineChannel<WhatsAppState, WhatsAppChannelContext>({
     async "message.completed"(event, channelContext) {
       if (channelContext.socket === null || channelContext.state.jid === "") return;
       if (!shouldDeliverAssistantMessage(event)) return;
+      const runtime = getRuntime();
+      const replyMode =
+        runtime.activeReplyModes.get(channelContext.state.jid) ??
+        (channelContext.state.voiceReply ? "voice" : "text");
+      if (replyMode === "voice") {
+        const delivery = await deliverWhatsAppVoiceOrText({
+          text: event.message,
+          sendText: (text) => sendText(channelContext.socket, channelContext.state.jid, text),
+          sendVoice: async (audio) => {
+            await channelContext.socket.sendMessage(channelContext.state.jid, {
+              audio,
+              mimetype: "audio/ogg; codecs=opus",
+              ptt: true,
+            });
+          },
+        });
+        if (delivery.kind === "text") {
+          console.error("[whatsapp] voice reply failed; sent text instead", delivery.error);
+        }
+        return;
+      }
       await sendText(channelContext.socket, channelContext.state.jid, event.message);
     },
     async "session.waiting"(_event, channelContext, sessionContext) {
-      getRuntime().failedSessions.delete(sessionContext.session.id);
+      const runtime = getRuntime();
+      runtime.failedSessions.delete(sessionContext.session.id);
+      if (!runtime.pendingInputs.has(channelContext.state.jid)) {
+        runtime.activeReplyModes.delete(channelContext.state.jid);
+      }
       if (channelContext.socket !== null && channelContext.state.jid !== "") {
         await sendTyping(channelContext.socket, channelContext.state.jid, "paused");
       }
     },
     async "turn.failed"(_event, channelContext, sessionContext) {
       const runtime = getRuntime();
+      runtime.pendingInputs.delete(channelContext.state.jid);
+      runtime.activeReplyModes.delete(channelContext.state.jid);
       if (
         channelContext.socket === null ||
         channelContext.state.jid === "" ||
@@ -351,6 +502,8 @@ const channel = defineChannel<WhatsAppState, WhatsAppChannelContext>({
     },
     async "session.failed"(event, channelContext) {
       const runtime = getRuntime();
+      runtime.pendingInputs.delete(channelContext.state.jid);
+      runtime.activeReplyModes.delete(channelContext.state.jid);
       if (
         channelContext.socket === null ||
         channelContext.state.jid === "" ||

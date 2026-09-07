@@ -3,6 +3,11 @@
 set -euo pipefail
 
 agent_pid=""
+env_file_args=()
+
+if [[ -f "apps/web/.env.local" ]]; then
+  env_file_args=(--env-file="apps/web/.env.local")
+fi
 
 stop_agent() {
   if [[ -n "$agent_pid" ]] && kill -0 "$agent_pid" 2>/dev/null; then
@@ -13,7 +18,7 @@ stop_agent() {
 
 trap stop_agent EXIT INT TERM
 
-ANCHOR_WHATSAPP_ENABLED=1 PORT=2000 bun run --filter @anchor-os/agent dev &
+ANCHOR_WHATSAPP_ENABLED=1 PORT=2000 bun "${env_file_args[@]}" run --filter @anchor-os/agent dev &
 agent_pid=$!
 
 agent_ready=0

@@ -23,8 +23,28 @@ export type WhatsAppMessageKey = {
   readonly remoteJidAlt?: string | null;
 };
 
+export type WhatsAppPendingInput = {
+  readonly allowFreeform: boolean;
+  readonly options: readonly { readonly id: string; readonly label: string }[];
+  readonly requestId: string;
+};
+
+export type WhatsAppInputResolution =
+  | { readonly kind: "invalid-option"; readonly optionCount: number }
+  | {
+      readonly kind: "response";
+      readonly response:
+        | { readonly requestId: string; readonly optionId: string }
+        | { readonly requestId: string; readonly text: string };
+    };
+
+export type WhatsAppSerialQueue = { tail: Promise<void> };
+
+export type WhatsAppReplyMode = "text" | "voice";
+
 export function normalizePhoneNumber(value: string): string {
-  const localPart = value.split("@")[0] ?? "";
+  const address = value.split("@")[0] ?? "";
+  const localPart = address.split(":")[0] ?? "";
   return localPart.replace(/\D/g, "");
 }
 
@@ -123,6 +143,88 @@ export function renderWhatsAppInputRequest(input: {
   if (input.options === undefined || input.options.length === 0) return input.prompt;
   const choices = input.options.map((option, index) => `${index + 1}. ${option.label}`);
   return `${input.prompt}\n\n${choices.join("\n")}\n\nReply with a number.`;
+}
+
+export function resolveWhatsAppInputResponse(
+  pending: WhatsAppPendingInput,
+  text: string,
+): WhatsAppInputResolution {
+  const answer = text.trim();
+  if (pending.options.length > 0) {
+    const optionNumber = Number(answer);
+    if (
+      Number.isInteger(optionNumber) &&
+      optionNumber >= 1 &&
+      optionNumber <= pending.options.length
+    ) {
+      const option = pending.options[optionNumber - 1];
+      if (option === undefined) {
+        return { kind: "invalid-option", optionCount: pending.options.length };
+      }
+      return {
+        kind: "response",
+        response: {
+          requestId: pending.requestId,
+          optionId: option.id,
+        },
+      };
+    }
+    if (!pending.allowFreeform) {
+      return { kind: "invalid-option", optionCount: pending.options.length };
+    }
+  }
+  return {
+    kind: "response",
+    response: { requestId: pending.requestId, text: answer },
+  };
+}
+
+export function markWhatsAppListenersAttached(
+  attachedSockets: WeakSet<object>,
+  socket: object,
+): boolean {
+  if (attachedSockets.has(socket)) return false;
+  attachedSockets.add(socket);
+  return true;
+}
+
+export function enqueueWhatsAppTask(
+  queue: WhatsAppSerialQueue,
+  task: () => Promise<void>,
+): Promise<void> {
+  const result = queue.tail.then(task, task);
+  queue.tail = result.catch(() => undefined);
+  return result;
+}
+
+export function queueWhatsAppReplyMode(
+  replyModes: Map<string, WhatsAppReplyMode[]>,
+  jid: string,
+  mode: WhatsAppReplyMode,
+): void {
+  const modes = replyModes.get(jid) ?? [];
+  modes.push(mode);
+  replyModes.set(jid, modes);
+}
+
+export function dropLastWhatsAppReplyMode(
+  replyModes: Map<string, WhatsAppReplyMode[]>,
+  jid: string,
+): void {
+  const modes = replyModes.get(jid);
+  modes?.pop();
+  if (modes?.length === 0) replyModes.delete(jid);
+}
+
+export function takeWhatsAppReplyMode(
+  replyModes: Map<string, WhatsAppReplyMode[]>,
+  jid: string,
+  fallback: WhatsAppReplyMode,
+): WhatsAppReplyMode {
+  const modes = replyModes.get(jid);
+  const mode = modes?.shift() ?? fallback;
+  if (modes?.length === 0) replyModes.delete(jid);
+  return mode;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

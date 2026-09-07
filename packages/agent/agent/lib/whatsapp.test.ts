@@ -6,15 +6,21 @@ import {
   WHATSAPP_BROWSER_UNAVAILABLE_MESSAGE,
   canDispatchBrowserTask,
   disconnectStatusCode,
+  dropLastWhatsAppReplyMode,
   isAllowedWhatsAppSender,
   isExpectedWhatsAppReceiver,
   isResetCommand,
+  enqueueWhatsAppTask,
+  markWhatsAppListenersAttached,
   normalizePhoneNumber,
+  queueWhatsAppReplyMode,
   readWhatsAppConfig,
   renderWhatsAppInputRequest,
+  resolveWhatsAppInputResponse,
   shouldDeliverAssistantMessage,
   shouldReconnectWhatsApp,
   splitWhatsAppText,
+  takeWhatsAppReplyMode,
   whatsappContinuationAddress,
   whatsappUserAuth,
 } from "./whatsapp";
@@ -41,6 +47,12 @@ describe("WhatsApp startup configuration", () => {
     expect(
       isExpectedWhatsAppReceiver("919999999999@s.whatsapp.net", DEFAULT_WHATSAPP_RECEIVING_NUMBER),
     ).toBe(false);
+    expect(
+      isExpectedWhatsAppReceiver(
+        "917276411669:17@s.whatsapp.net",
+        DEFAULT_WHATSAPP_RECEIVING_NUMBER,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -119,6 +131,70 @@ test("formats HITL choices and splits oversized final messages", () => {
     }),
   ).toBe("Choose a priority\n\n1. Low\n2. High\n\nReply with a number.");
   expect(splitWhatsAppText("x".repeat(65_537)).map((part) => part.length)).toEqual([65_536, 1]);
+});
+
+test("maps numbered and freeform HITL replies to their request IDs", () => {
+  const pending = {
+    allowFreeform: false,
+    options: [
+      { id: "low", label: "Low" },
+      { id: "high", label: "High" },
+    ],
+    requestId: "request-1",
+  };
+  expect(resolveWhatsAppInputResponse(pending, "2")).toEqual({
+    kind: "response",
+    response: { optionId: "high", requestId: "request-1" },
+  });
+  expect(resolveWhatsAppInputResponse(pending, "9")).toEqual({
+    kind: "invalid-option",
+    optionCount: 2,
+  });
+  expect(
+    resolveWhatsAppInputResponse(
+      { allowFreeform: true, options: [], requestId: "request-2" },
+      "Tomorrow morning",
+    ),
+  ).toEqual({
+    kind: "response",
+    response: { requestId: "request-2", text: "Tomorrow morning" },
+  });
+});
+
+test("keeps accepted work in order after a failed queued task", async () => {
+  const queue = { tail: Promise.resolve() };
+  const calls: string[] = [];
+  const first = enqueueWhatsAppTask(queue, async () => {
+    await Bun.sleep(5);
+    calls.push("first");
+  });
+  const failed = enqueueWhatsAppTask(queue, async () => {
+    calls.push("failed");
+    throw new Error("expected failure");
+  });
+  const last = enqueueWhatsAppTask(queue, async () => {
+    calls.push("last");
+  });
+  await expect(first).resolves.toBeUndefined();
+  await expect(failed).rejects.toThrow("expected failure");
+  await expect(last).resolves.toBeUndefined();
+  expect(calls).toEqual(["first", "failed", "last"]);
+});
+
+test("attaches one listener set per socket and preserves queued reply modes", () => {
+  const attachedSockets = new WeakSet<object>();
+  const socket = {};
+  expect(markWhatsAppListenersAttached(attachedSockets, socket)).toBe(true);
+  expect(markWhatsAppListenersAttached(attachedSockets, socket)).toBe(false);
+  expect(markWhatsAppListenersAttached(attachedSockets, {})).toBe(true);
+
+  const replyModes = new Map();
+  queueWhatsAppReplyMode(replyModes, "sender", "voice");
+  queueWhatsAppReplyMode(replyModes, "sender", "text");
+  dropLastWhatsAppReplyMode(replyModes, "sender");
+  expect(takeWhatsAppReplyMode(replyModes, "sender", "text")).toBe("voice");
+  expect(takeWhatsAppReplyMode(replyModes, "sender", "voice")).toBe("voice");
+  expect(takeWhatsAppReplyMode(replyModes, "sender", "text")).toBe("text");
 });
 
 test("reconnects recoverable disconnects but not logout or replacement", () => {
