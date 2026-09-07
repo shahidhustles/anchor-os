@@ -7,7 +7,7 @@
     "dev": "next dev -p 3100",
     "build": "next build",
     "start": "next start -p 3100",
-    "test": "bun test src/lib/maintenance-store.test.ts src/components/assets-table.test.tsx src/components/work-order-table.test.tsx src/components/work-order-form.test.tsx src/components/app-footer.test.tsx",
+    "test": "bun test src/lib/maintenance-store.test.ts src/components/assets-table.test.tsx src/components/work-order-table.test.tsx src/components/work-order-form.test.tsx src/components/work-order-priority-editor.test.tsx src/components/app-footer.test.tsx",
     "lint": "oxlint && oxfmt --check",
     "typecheck": "tsc --noEmit"
   },

@@ -11,6 +11,7 @@ import {
   readPlantState,
   resetDemo,
   sortWorkOrdersNewestFirst,
+  updateWorkOrderPriority,
   validateWorkOrderInput,
   type NewWorkOrderInput,
   type WorkOrderFormValues,
@@ -38,6 +39,7 @@ class FakeLocalStorage {
 interface FakeWindow {
   storage: FakeLocalStorage;
   localStorage: FakeLocalStorage;
+  events: Array<{ type: string }>;
   addEventListener: (type: string, listener: () => void) => void;
   removeEventListener: (type: string, listener: () => void) => void;
   dispatchEvent: (event: { type: string }) => boolean;
@@ -46,9 +48,11 @@ interface FakeWindow {
 function installFakeWindow(): FakeWindow {
   const storage = new FakeLocalStorage();
   const listeners = new Map<string, Array<() => void>>();
+  const events: Array<{ type: string }> = [];
   const win: FakeWindow = {
     storage,
     localStorage: storage,
+    events,
     addEventListener: (type, listener) => {
       const set = listeners.get(type) ?? [];
       set.push(listener);
@@ -62,6 +66,7 @@ function installFakeWindow(): FakeWindow {
       );
     },
     dispatchEvent: (event) => {
+      events.push(event);
       const set = listeners.get(event.type) ?? [];
       for (const listener of set) listener();
       return true;
@@ -161,6 +166,65 @@ test("assigns incrementing IDs across multiple creations", () => {
 
   assert.equal(first.ok && first.workOrder.id, "WO-1043");
   assert.equal(second.ok && second.workOrder.id, "WO-1044");
+});
+
+test("updates one work order priority and persists it", () => {
+  const win = installFakeWindow();
+  const before = readPlantState().state;
+  const untouched = before.workOrders.find((workOrder) => workOrder.id === "WO-1041");
+
+  const result = updateWorkOrderPriority("WO-1042", "High");
+
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.previousPriority, "Medium");
+  assert.equal(result.workOrder.priority, "High");
+
+  const after = readPlantState().state;
+  assert.equal(after.workOrders.find((workOrder) => workOrder.id === "WO-1042")?.priority, "High");
+  assert.deepEqual(
+    after.workOrders.find((workOrder) => workOrder.id === "WO-1041"),
+    untouched,
+  );
+  assert.equal(
+    win.events.some((event) => event.type === "plantops:state-changed"),
+    true,
+  );
+
+  const persisted = JSON.parse(win.storage.getItem(STORAGE_KEY) ?? "null") as {
+    workOrders: Array<{ id: string; priority: string }>;
+  };
+  assert.equal(
+    persisted.workOrders.find((workOrder) => workOrder.id === "WO-1042")?.priority,
+    "High",
+  );
+});
+
+test("rejects unknown work orders and invalid priorities without changing state", () => {
+  const win = installFakeWindow();
+  const before = readPlantState().state;
+
+  assert.deepEqual(updateWorkOrderPriority("WO-9999", "High"), {
+    ok: false,
+    error: "not-found",
+  });
+  assert.deepEqual(updateWorkOrderPriority("WO-1042", "Urgent"), {
+    ok: false,
+    error: "invalid-priority",
+  });
+  assert.deepEqual(readPlantState().state, before);
+  assert.equal(win.events.filter((event) => event.type === "plantops:state-changed").length, 0);
+});
+
+test("reports a storage failure when updating priority", () => {
+  const win = installFakeWindow();
+  readPlantState();
+  win.storage.failWrites = true;
+
+  assert.deepEqual(updateWorkOrderPriority("WO-1042", "High"), {
+    ok: false,
+    error: "storage-unavailable",
+  });
 });
 
 test("reset restores the exact seed state and removes rehearsal work orders", () => {

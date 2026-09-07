@@ -41,6 +41,17 @@ export type CreateWorkOrderResult =
   | { readonly ok: true; readonly workOrder: WorkOrder }
   | { readonly ok: false; readonly error: "storage-unavailable" };
 
+export type UpdateWorkOrderPriorityResult =
+  | {
+      readonly ok: true;
+      readonly workOrder: WorkOrder;
+      readonly previousPriority: WorkOrderPriority;
+    }
+  | {
+      readonly ok: false;
+      readonly error: "invalid-priority" | "not-found" | "storage-unavailable";
+    };
+
 export interface WorkOrderFormValues {
   readonly assetId: string;
   readonly title: string;
@@ -253,6 +264,29 @@ export function createWorkOrder(input: NewWorkOrderInput): CreateWorkOrderResult
   if (!writeStorage(next)) return { ok: false, error: "storage-unavailable" };
   notifyStateChange();
   return { ok: true, workOrder };
+}
+
+export function updateWorkOrderPriority(
+  workOrderId: string,
+  priority: string,
+): UpdateWorkOrderPriorityResult {
+  if (!matches(PRIORITIES, priority)) return { ok: false, error: "invalid-priority" };
+
+  const { state } = readPlantState();
+  const existing = state.workOrders.find((workOrder) => workOrder.id === workOrderId);
+  if (existing === undefined) return { ok: false, error: "not-found" };
+
+  const updated: WorkOrder = { ...existing, priority };
+  const next: PlantState = {
+    version: STATE_VERSION,
+    assets: state.assets,
+    workOrders: state.workOrders.map((workOrder) =>
+      workOrder.id === workOrderId ? updated : workOrder,
+    ),
+  };
+  if (!writeStorage(next)) return { ok: false, error: "storage-unavailable" };
+  notifyStateChange();
+  return { ok: true, workOrder: updated, previousPriority: existing.priority };
 }
 
 export function resetDemo(): { readonly ok: boolean } {

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { NotFoundPanel } from "@/components/not-found-panel";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { StatusBadge, priorityTone, workOrderStatusTone } from "@/components/status-badge";
+import { WorkOrderPriorityEditor } from "@/components/work-order-priority-editor";
 import { formatDateTime } from "@/lib/maintenance-store";
 import { usePlantState } from "@/lib/use-plant-state";
 import { linkButton } from "@/lib/ui";
@@ -87,6 +88,8 @@ export default function WorkOrderDetailPage() {
           <span className="text-sm text-ink-muted">{workOrder.description}</span>
         </DetailRow>
       </dl>
+
+      <WorkOrderPriorityEditor workOrderId={workOrder.id} priority={workOrder.priority} />
     </div>
   );
 }
